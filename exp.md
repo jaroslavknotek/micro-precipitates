@@ -7,9 +7,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.14.5
   kernelspec:
-    display_name: palivo
+    display_name: computer-vision
     language: python
-    name: palivo
+    name: .venv
 ---
 
 ```python
@@ -29,20 +29,9 @@ data_dir_root = pathlib.Path(DATA_DIR_ROOT)
 import imageio
 import matplotlib.pyplot as plt
 import numpy as np
+np.set_printoptions(suppress=True)
 
 import cv2
-
-def _norm(img):
-    img_min = np.min(img)
-    img_max = np.max(img)
-    if img_min == img_max:
-        return img
-    
-    norm_img = (img - img_min)/(img_max -img_min)
-    return (norm_img * 255).astype(np.uint8)
-
-def _crop_bottom_bar(img,bar_height = 120):
-    return img[:-bar_height]
 
 def _get_contour(img,dilate_by  = 5):
     element = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(dilate_by,dilate_by))
@@ -90,11 +79,13 @@ def _draw_labels_circles(img,label,ax=None,figsize=(20,20)):
     ax.imshow(img,cmap='seismic',vmin=0)
     circles = _get_prec_circles(label,circle_padding = 5)
     _plot_circles(ax,circles)
-    
-    
 
-img = imageio.imread('/home/jry/source/jaroslavknotek/micro-grain/data/delisa/Delisa-castice/otagovany/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03.tif')
-label_raw = imageio.imread('/home/jry/source/jaroslavknotek/micro-grain/data/delisa/Delisa-castice/otagovany/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03_OZNACENI_CASTIC.tif')
+
+    
+    
+    
+img = imageio.imread('/home/jry/source/jaroslavknotek/micro-precipitates/data/Delisa-castice/otagovany/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03.tif')
+label_raw = imageio.imread('/home/jry/source/jaroslavknotek/micro-precipitates/data/Delisa-castice/otagovany/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03_OZNACENI_CASTIC.tif')
 
 img,label_raw = [_norm(_crop_bottom_bar(img)) for img in [img,label_raw]]
 
@@ -105,7 +96,7 @@ label = label.astype(int)
 label_255 = (label*255).astype(np.uint8)
 
 
-label_large_raw = _crop_bottom_bar(imageio.imread("data/label_large_raw.png"))
+label_large_raw = _crop_bottom_bar(imageio.imread("data/Delisa-castice/otagovany/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03_binary_label.png"))
 label_255 =label_large_raw
 
 _,(ax_img,ax_label) = plt.subplots(1,2,figsize = (20,10))
@@ -131,11 +122,6 @@ def _extract_grain_mask(labels,grain_id):
     
     return grain
 
-# def _crop_nz(img):
-#     coords = np.argwhere(img)
-#     x_min, y_min = coords.min(axis=0)
-#     x_max, y_max = coords.max(axis=0)
-#     return img[x_min:x_max+1, y_min:y_max+1]
     
 def _pair_grains(predicted,label):
     p_n, p_grains = cv2.connectedComponents(predicted)
@@ -210,14 +196,6 @@ def _print_confusion_matrix(conmat):
 import cv2
 from tqdm.auto import tqdm
 
-def _blur(img,sigma = 1):
-    return cv2.GaussianBlur(img,(sigma,sigma),0)
-    
-
-def _threshold(img,threshold):
-    _,th3 =  cv2.threshold(img,threshold,255,cv2.THRESH_BINARY)
-    return 255-th3
-
 def plot_prec_rec(prec,rec, thresholds=None):
     plt.plot(prec,label = "precision")
     plt.plot(rec,label = "recall")
@@ -267,19 +245,7 @@ plt.plot(z*20)
 ```
 
 ```python
-import scipy.ndimage
 
-def _background_divide(img, foreground_sigma = 1, background_sigma_rel =.15  ):
-    background_sigma = int(background_sigma_rel * np.max(img.shape))
-    
-    img_b =  scipy.ndimage.gaussian_filter(img,foreground_sigma).astype(float)    
-    mean_img = np.mean(img_b)
-    img_mean_subtracted =  img_b.astype(float)-mean_img
-    img_strong_blur = scipy.ndimage.gaussian_filter(img_mean_subtracted,background_sigma)
-    
-    background_normed =  (img_mean_subtracted+ mean_img )/ (img_strong_blur+ mean_img)
-    
-    return background_normed
     
 #img_backg_noise_div[np.isnan(img_backg_noise_div)] = 0
 imgs = [
@@ -437,161 +403,245 @@ axs_c2 = axs[:,1]
 ```
 
 ```python
-thresholds = np.arange(80,141,5)
-res = [ compare(_threshold(_norm(_gs_morph(img,3)),t),label_255) for t in tqdm(thresholds)]
-xx = np.array([(p,r) for p,r,_ in res]).T
+# thresholds = np.arange(80,141,5)
+# n_g_img=_norm(_gs_morph(img,3))
+# res = [ compare(_threshold(n_g_img,t),label_255) for t in tqdm(thresholds)]
+# xx = np.array([(p,r) for p,r,_ in res]).T
 
-plot_prec_rec(xx[0],xx[1],thresholds)
+# plot_prec_rec(xx[0],xx[1],thresholds)
 ```
 
-```python
-thresholds = np.arange(80,141,5)
-res = [ compare(_threshold(_norm(_gs_morph(_background_divide(img),3)),t),label_255) for t in tqdm(thresholds)]
-xx = np.array([(p,r) for p,r,_ in res]).T
+# TODO incorporate moments
+- rotation normalization
+  - Careful about symmetry
+  
+# NEXT steps
 
-plot_prec_rec(xx[0],xx[1],thresholds)
-```
+Find better thresholds
+Don't use grayscale morhpology -> use threshold and normal one
 
-```python
-thresholds = np.arange(80,141,5)
-res = [ compare(_threshold(_norm(_gs_morph(_background_divide(img),4)),t),label_255) for t in tqdm(thresholds)]
-xx = np.array([(p,r) for p,r,_ in res]).T
 
-plot_prec_rec(xx[0],xx[1],thresholds)
-```
 
 ```python
-_,ax = plt.subplots(1,1,figsize=(20,20))
-ax.imshow(_background_divide(img),cmap='gray',vmin=0)
-_plot_circles(ax,_get_prec_circles(label_255))(x,y),radius = cv.minEnclosingCircle(cnt)
-center = (int(x),int(y))
-radius = int(radius)
-```
+import matplotlib.pyplot as plt
+import img_tools
+from pathlib import Path
 
-```python
-_draw_labels_circles(_background_divide(img),label_255)
-```
+import precipitates         
 
-```python
-_,ax = plt.subplots(1,1,figsize=(20,20))
-ax.imshow(_gs_morph(_background_divide(img),3),cmap='seismic',vmin=0)
-_plot_circles(ax,_get_prec_circles(label_255))
-```
 
-```python
+
+data_root = Path('data/Delisa-castice/')
+images_paths = list(data_root.rglob('DELISA*/**/*.tif'))
+
+imgs = list(map(precipitates.load_microscope_img,images_paths))
+
+
+test_img_path = [ p for p in images_paths if p.name == 'DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_03.tif'][0]
+test_img = precipitates.load_microscope_img(test_img_path)
 threshold = 120
-test_shapes = _threshold(_norm(_gs_morph(_background_divide(img),3)),threshold)
+                                               
+    
+test_shapes = precipitates.extract_raw_mask(test_img,threshold)
 plt.imshow(test_shapes)
+
 ```
 
 ```python
-precision,recall,df = compare(test_shapes, label_255,include_df=True)
+import pandas as pd
+from tqdm.auto import tqdm
+    
+def get_precipitate_description_dataframe(img,threshold):
+    mask,shapes = precipitates.identify_precipitates(img,threshold)
+    precipitates_features = list(map(precipitates.extract_features,shapes))
+    precipitates_classes = [ precipitates.classify_shape(f) for f in precipitates_features]
+
+    df = pd.DataFrame(precipitates_features)
+    df['shape_class'] = precipitates_classes
+    total_px =  img.shape[0]*img.shape[1]
+    df['precipitate_area_ratio'] = df['precipitate_area_px']/total_px
+                                       
+    return df,mask
+
+threshold = 100
+dfs_masks = [ get_precipitate_description_dataframe(img,threshold) for img in tqdm(imgs,desc="processing images")]
+
 ```
 
 ```python
-def _analyse_shape():
-    pass
+import numpy as np
+
+def _show_precipitate_detail(ax,features,img):
+    
+    radius = features.circle_radius + 2
+    t = int(features.circle_y - radius)
+    b = t +int(radius*2)
+    l = int(features.circle_x - radius)
+    r = l +int(radius*2)
+    title = f"x:{int(features.circle_x)} y:{int(features.circle_y)}"
+    ax.set_title(title)
+    ax.imshow(img,cmap='gray', vmin=0,vmax=255)
+    ax.set_xlim((l,r))
+    ax.set_ylim((t,b))
+    ax.axis('off')
+    e = _get_ellipse(features)
+    ax.add_patch(e)
+    
+    
+
+# columns = 10
+# rows = min(int( np.ceil(len(df)/columns)),200)
+
+# _,axs = plt.subplots(rows,columns,figsize=(20,3*rows))
+# for ax, features in zip(axs.flatten(), df.itertuples()):
+#     _show_precipitate_detail(ax,features,test_img)
+# plt.show()
+```
+
+```python
+import collections
 
 
-def _get_contour(binary_img):
-    
-    contours,hierarchy = cv2.findContours(binary_img,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
-    assert len(contours) == 1, "Multiple or no contour found, expected only one"
-    
-    return contours[0]
-    
-def _get_bb(contour,padding_px = 0):    
-    x,y,w,h = cv2.boundingRect(contour)
-    
-    top = max(y-padding_px,0)
-    bottom = min(y+h + padding_px,img.shape[0])
-    left = max(x-padding_px,0)
-    right = min(x+w + padding_px, img.shape[1])
-    
-    return (top,bottom,left,right),contour
-    
-def _plot_shape(ax,img,mask,padding_px = 25):
-    contour = _get_contour(mask)
-    res = img*mask
-    (t,b,l,r) =_get_bb(contour,padding_px=padding_px)
-    pred = img[t:b,l:r]
-    pred_m = mask[t:b,l:r] 
-    # TODO, add pred_m as a channel
+def _get_shape_text(shape_class):
+    if shape_class == "shape_irregular":
+        return "Irregular"
+    elif shape_class == "shape_circle":
+        return "Circle"
+    else: 
+        return 'Needle-like'
 
-    (cx,cy),r = cv2.minEnclosingCircle(contour)
-    y = cy - t
-    x = cx - l
-            
-    ax.imshow(pred)
-    circle = plt.Circle(
+def _plot_area_histogram(ax,df,bins = 100):
+    ax.set_title("Area Distribution")
+    ax.hist(df.precipitate_area_ratio,bins = bins)
+    ax.set_ylabel("Number of precipitates in the bin")
+    ax.set_xlabel("Histogram bins")
+
+def _plot_shape_bar(ax,df):
+    labels, values = zip(*collections.Counter(df['shape_class']).items())
+    indexes = np.arange(len(labels))
+    width=.8
+    bar_colors = list(map(_get_shape_color,labels))
+    texts = list(map(_get_shape_text,labels))
+    
+    ax.set_title("Shape Distribution")
+    ax.bar(indexes, values, width,color = bar_colors)
+    ax.set_xticks(indexes, texts)
+    ax.set_ylabel("Number of precipitates")
+    ax.set_xlabel("Shapes")
+    
+
+# df,_ =dfs_masks[0]
+# img_path = images_paths[0]
+
+# _,axs = plt.subplots(1,2,figsize = (8,4))
+# plt.suptitle(img_path.name)
+# _plot_area_histogram(axs[0],df)
+# _plot_shape_bar(axs[1],df)
+
+# plt.tight_layout()
+```
+
+```python
+
+import matplotlib.patches
+import os
+import imageio
+
+def _get_shape_color(shape_class):
+    if shape_class == "shape_irregular":
+        return "magenta"
+    elif shape_class == "shape_circle":
+        return "#00FF00"
+    else: 
+        return 'red'
+
+def _get_ellipse(features):
+    
+    
+    deg = features.ellipse_angle_deg    
+    x = features.ellipse_center_x
+    y =features.ellipse_center_y
+    width = features.ellipse_width_px 
+    height = features.ellipse_height_px
+
+    c = _get_shape_color(features.shape_class)
+    return matplotlib.patches.Ellipse(
         (x,y),
-        r, 
-        color='#FF00FF',
+        width,
+        height,
+        angle = deg,
         fill=False,
-        linewidth=3)
-    
-    ax.add_patch(circle)
-
-    
-def _analyse_geometry(immask):
-    
-    if mask is None:
-        return None,None
-    mask = mask.astype(np.uint8)
-    
-    contour = _get_contour(mask)
-    
-    (cx,cy),r = cv2.minEnclosingCircle(contour)
-    area = cv2.contourArea(contour)
-    
-    return PrecipitationGeometry(
-        contour = contour,
-        area = area,
-        circle_radius = r,
-        center_x = cx,
-        center_y = cy
+        edgecolor=c,
+        lw=2,
+        alpha = .5
     )
-    
-    
-from dataclasses import dataclass
 
-@dataclass
-class PrecipitationGeometry:
-    """Geometric properties of a precipitation contour"""
-    contour: object # it's there for convinience, it should not be here afterwards
-    area: float
-    circle_radius:float
-    center_x:int
-    center_y:int
-    
-    def _circle_area(self) -> float:
-        return np.pi*self.circle_radius**2
-    
-    def circle_similarity(self) -> float:
-        return self.area / self._circle_area()
+def _plot_precipitates(ax,df,img):
+    ax.imshow(img,cmap='gray')
+    for features in df.itertuples():
+        e = _get_ellipse(features)
+        ax.add_patch(e)
 
+output_path = Path("output")
+for img,path,(df,mask) in tqdm(zip(imgs,images_paths,dfs_masks),total=len(imgs),desc="Plotting img_data"):
+    img_output = output_path/path.stem
+    os.makedirs(img_output,exist_ok=True)
     
+    df.to_csv(img_output/"data.csv",index=False)
+    
+    _,axs = plt.subplots(1,2,figsize = (8,4))
+    
+    plt.suptitle(path.name)
+    _plot_area_histogram(axs[0],df)
+    _plot_shape_bar(axs[1],df)
+    
+    plt.tight_layout()    
+    plt.savefig(img_output/"dist.png")   
+    plt.close()
+    
+    _,ax  = plt.subplots(1,1,figsize= (10,10))
+    _plot_precipitates(ax, df,img)
+    ax.set_title(path.name)
+    plt.savefig(img_output/"highlight.png")
+    plt.close()
+    
+    mask_255 = np.uint8(mask) *255
+    imageio.imwrite(img_output/"mask.png",mask_255)
+    imageio.imwrite(img_output/"img.png",img)
+    
+    
+    #detail
+    columns = 10
+    rows = min(int( np.ceil(len(df)/columns)),20)
+    _,axs = plt.subplots(rows,columns,figsize=(3*columns,3*rows))
+    for ax, features in zip(axs.flatten(), df.itertuples()):
+        _show_precipitate_detail(ax,features,img)
+    plt.suptitle("Detail of Precipitates")
+    plt.savefig(img_output/"details.pdf")
+    plt.tight_layout()
+    plt.close()
+    
+    
+```
 
-def _process_results(df, img):
+```python
+for img,path,(df,mask) in zip(imgs,images_paths,dfs_masks):
+    print(path.name)
+    _,ax  = plt.subplots(1,1,figsize= (10,10))
+    _plot_precipitates(ax, df,img)
+    ax.set_title(path.name)
+    plt.show()
     
-    for idx, row in df.iterrows():
-        if row["pred_mask"] is not None:    
-            # MAYBE I would like to extract and threshold stuff
-            geometry = _analyse_geometry(row["pred_mask"])
-            
-            return
-            
-            print(area, circle_area, area/circle_area) 
-            
-            _,ax = plt.subplots(1,1)
-            
-            
-            plt.show()
-            return
-    
-    
-    circles = _get_prec_circles(precipitates_mask)
+```
 
-_process_results(df,img)
+```python
 
+```
+
+```python
+for path,img in zip(images_paths,imgs):
+    plt.imshow(img)
+    plt.title(path.name)
+    print(path.name)
+    plt.show()
 ```
