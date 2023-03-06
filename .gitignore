@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# JK
+
+data
+output
+tmp
+*.ipynb
