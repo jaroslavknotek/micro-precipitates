@@ -135,3 +135,4 @@ data
 output
 tmp
 *.ipynb
+/model
