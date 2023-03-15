@@ -13,7 +13,7 @@ jupyter:
 ---
 
 ```python
-%load_ext autoreload
+%load_ext abutoreload
 %autoreload 2
 ```
 
