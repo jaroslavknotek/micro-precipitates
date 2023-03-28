@@ -4,7 +4,6 @@ import numpy as np
 import imageio
 from dataclasses import dataclass
 
-
 @dataclass
 class PrecipitateFeatures:
     """Precipitate features"""
