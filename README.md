@@ -1,4 +1,4 @@
-# Identify and Clasifiy precipitates from SEM imagery
+# Identify and classifiy precipitates from SEM imagery
  ---
 
 
