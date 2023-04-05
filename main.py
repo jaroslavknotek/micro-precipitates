@@ -14,14 +14,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-
-
-
 IMG_SIZE = 128
 IMG_CHANNELS = 3
 DATA_ROOT = "data/labeled"
-MODEL_PATH = "model/model-prec-1.h5"
-
+TEST_ROOT = "data/not_labeled"
+MODEL_PATH = "model/model-prec-202304-05.h5"
 
 
 def _run_batch(img_paths,model):
@@ -65,10 +62,8 @@ if __name__ =='__main__':
     
 
     print("Reading data")
-    tif_paths = list(pathlib.Path("data").rglob("*.tif"))
-    labeled_img_paths = list(pathlib.Path("data/labeled").rglob("img.png"))
-    labeled_img_paths_names = [p.parent.name for p in labeled_img_paths ]
-    test_img_paths = [p for p in tif_paths if p.stem not in labeled_img_paths_names]
+    tif_paths = list(pathlib.Path(TEST_ROOT).rglob("*.tif"))
+    test_img_paths = list(pathlib.Path("data/labeled").rglob("img.png"))
 
     print("Running prediction")
     _run_batch(test_img_paths,model)
