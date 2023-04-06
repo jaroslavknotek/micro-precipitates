@@ -18,7 +18,7 @@ IMG_SIZE = 128
 IMG_CHANNELS = 3
 DATA_ROOT = "data/labeled"
 TEST_ROOT = "data/not_labeled"
-MODEL_PATH = "model/model-prec-202304-05.h5"
+MODEL_PATH = "model/model-prec-20230406.h5"
 
 
 def _run_batch(img_paths,model):
