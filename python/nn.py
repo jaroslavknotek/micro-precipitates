@@ -108,8 +108,8 @@ def _train_model(model,X_train,y_train,model_path):
         epochs=50,
         callbacks=[earlystopper, checkpointer])
     
-def train(img_size,channels,model_path):
-    model = nn.compose_unet(img_size,img_size,channels)
+def train(img_size,channels,model_path, X_train, X_test, y_train, y_test ):
+    model = compose_unet(img_size,img_size,channels)
     _train_model(model, X_train,y_train, str(model_path))
     return load_model(model_path)
 

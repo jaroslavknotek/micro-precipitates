@@ -57,7 +57,7 @@ if __name__ =='__main__':
         model = nn.load_model(model_path)
     else:
         print(f"Existing model not found at {model_path}. Training started")
-        model = train_model(IMG_SIZE,IMG_CHANNELS,model_path)
+        model = nn.train(IMG_SIZE,IMG_CHANNELS,model_path, X_train, X_test, y_train, y_test )
         
     
 
