@@ -11,12 +11,13 @@ def read_dataset(dataset_root,img_size):
     imgs,masks = _read_dataset(dataset_root)
     
     t_imgs = tqdm(imgs,desc='Augumenting and cropping input images',total=len(masks))
-    data = np.array(list(_get_crops_dataset_iter(t_imgs,masks,img_size)))
-
-    #HACK to finish the iterator
-    list(t_imgs)
-
+    # data = np.array(list(_get_crops_dataset_iter(t_imgs,masks,img_size)))
+    data = np.fromiter(
+        _get_crops_dataset_iter(t_imgs,masks,img_size),
+        dtype = (np.uint8,(2,img_size,img_size)))
     
+    #HACK to finish the iterator
+    list(t_imgs)  
 
     X = np.array([ _ensure_three_chanels(i) for i in data[:,0]])
     y = data[:,1].astype(bool)
@@ -69,7 +70,7 @@ def augument_and_crop(img,mask,size,seed= 4567):
     np.random.seed = seed
     padded_size = int(np.ceil(np.sqrt(2)*size) +1)    
     
-    stride = 8
+    stride = 10
     shape = (padded_size,padded_size)
     imgs = np.lib.stride_tricks.sliding_window_view(img,shape)[::stride,::stride].reshape((-1,*shape))
     masks = np.lib.stride_tricks.sliding_window_view(mask,shape)[::stride,::stride].reshape((-1,*shape))
