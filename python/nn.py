@@ -22,7 +22,7 @@ from keras import backend as K
 import keras.models
 import tensorflow as tf
 
-import python.dataset as dataset
+import dataset
 warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
 seed = 42
 random.seed = seed
@@ -32,7 +32,7 @@ def predict(model, img, img_size=128):
     test_data_2d = _cut_to_pieces(img,img_size)
     square_size = test_data_2d.shape[0] 
     test_data = np.array(list(map(dataset._ensure_three_chanels, test_data_2d.reshape((-1,img_size,img_size)))))
-    preds_test = model.predict(test_data, verbose=1)
+    preds_test = model.predict(test_data, verbose=0)
     preds_test = preds_test[...,0]
     preds_mask  =_decut_mask(preds_test,square_size)
     return (preds_mask>.5).astype(np.uint8)*255

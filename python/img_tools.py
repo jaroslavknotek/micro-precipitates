@@ -47,35 +47,31 @@ def rotate_image(img, angle_deg):
     
     
 
-def get_bounding_box(mask,padding = 0,append_crop = False):
+def get_bounding_box(mask):
     """
     returns bounding box top,bottom,left,right pixel coordinates of the object 
-    with padding `padding`
     """
-    assert padding >=0
     
     yy,xx = np.nonzero(mask)
 
     nz_l,nz_r  = np.min(xx),np.max(xx)
     nz_t,nz_b = np.min(yy),np.max(yy)
     
-    bb_l = np.maximum(0,nz_l-padding)
-    bb_r = np.minimum(mask.shape[1],nz_r +padding)
+    bb_l = np.maximum(0,nz_l)
+    bb_r = np.minimum(mask.shape[1],nz_r )
     
-    bb_t = np.maximum(0,nz_t-padding)
-    bb_b = np.minimum(mask.shape[0],nz_b +padding)
-    t,b,l,r =  bb_t,bb_b +1,bb_l,bb_r+1
-    if not append_crop:
-        return t,b,l,r
-    else:
-        return (t,b,l,r), mask[t:b,l:r]
+    bb_t = np.maximum(0,nz_t)
+    bb_b = np.minimum(mask.shape[0],nz_b)
+    return  bb_t,bb_b +1,bb_l,bb_r+1
 
 def get_shape_contour(binary_img):    
-    contours,_ = cv2.findContours(binary_img,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    padding= 2
+    img = np.pad(binary_img,padding)
+    contours,_ = cv2.findContours(img,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
     assert len(contours) == 1, "Multiple or no contour found, expected only one"
     
     c  = contours[0]
-    return c[:,0,:]
+    return c[:,0,:]  -padding
 
 def _extract_component(component_mask,component_id):
     component_only = component_mask.copy()
@@ -87,9 +83,10 @@ def _extract_component(component_mask,component_id):
     
     return component_only.astype(np.uint8)
 
-def extract_component_with_bounding_boxes(binary_img,bb_padding = 2):
+def extract_component_with_bounding_boxes(binary_img):
     n_found, cmp_mask = cv2.connectedComponents(binary_img)
     components = (_extract_component(cmp_mask,i) for i in range(1,n_found))
-    return [get_bounding_box(c,padding=bb_padding,append_crop=True) for c in components]
+    bbs = [(get_bounding_box(c),c) for c in components]
+    return [ ((t,b,l,r),c[t:b,l:r]) for (t,b,l,r),c in bbs]
 
 
