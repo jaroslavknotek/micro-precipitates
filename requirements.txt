@@ -1,5 +1,4 @@
 numpy
-opencv-python
 tqdm
 imageio
 scikit-image
