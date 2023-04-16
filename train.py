@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 
 IMG_SIZE = 128
 IMG_CHANNELS = 3
-DATA_ROOT = "data/20230407-combined"
-MODEL_PATH = "model/model-20230407-combined.h5"
+DATA_ROOT = "data/20230415"
+MODEL_PATH = "model/model-20230416.h5"
 
 if __name__ =='__main__':
     X_train, X_test, y_train, y_test = dataset.read_dataset(DATA_ROOT,IMG_SIZE)
