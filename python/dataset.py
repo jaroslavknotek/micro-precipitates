@@ -7,6 +7,26 @@ import numpy as np
 
 import sklearn.model_selection
 
+def dump_dataset(dataset_root, out_dir ,img_size = 128):
+    imgs,masks = _read_dataset(dataset_root)
+    out_dir = pathlib.Path(out_dir)    
+    t_imgs = tqdm(imgs,desc='Augumenting and cropping input images',total=len(masks))
+    # data = np.array(list(_get_crops_dataset_iter(t_imgs,masks,img_size)))
+    data = _get_crops_dataset_iter(t_imgs,masks,img_size)
+    
+    zeros = 6
+
+    for i,(img,mask) in enumerate(data):
+        suffix = str(i).zfill(zeros)
+        mask_path = out_dir/"mask"/f"img_{suffix}.png"
+        mask_path.parent.mkdir(exist_ok=True,parents=True)
+        imageio.imwrite(mask_path,mask)
+
+        img_path = out_dir/"img"/f"img_{suffix}.png"
+        img_path.parent.mkdir(exist_ok=True,parents=True)
+        imageio.imwrite(img_path,img)
+
+
 def read_dataset(dataset_root,img_size):
     imgs,masks = _read_dataset(dataset_root)
     

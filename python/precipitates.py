@@ -29,11 +29,11 @@ class PrecipitateShape:
 def _crop_bottom_bar(img,bar_height = 120):
     return img[:-bar_height]
 
-def load_microscope_img(path,has_bottom_bar=True):
+def load_microscope_img(path):
     img = imageio.imread(path)
-    if has_bottom_bar:
-        img = _crop_bottom_bar(img)
-    return img_tools.norm(img)
+    width = img.shape[1]
+    # ensure square
+    return img[:width,:]
 
 def extract_raw_mask(img,threshold,min_prec_size = 3):
     bcg_normed = img_tools.background_divide(img)
