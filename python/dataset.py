@@ -4,6 +4,7 @@ import shutil
 import cv2
 from tqdm.auto import tqdm
 import numpy as np
+import itertools
 
 import sklearn.model_selection
 
@@ -28,24 +29,26 @@ def dump_dataset(dataset_root, out_dir ,img_size = 128):
 
 
 def read_dataset(dataset_root,img_size):
-    imgs,masks = _read_dataset(dataset_root)
+    imgs_masks = _read_image_mask_pair(dataset_root)
     
-    t_imgs = tqdm(imgs,desc='Augumenting and cropping input images',total=len(masks))
-    # data = np.array(list(_get_crops_dataset_iter(t_imgs,masks,img_size)))
-    data = np.fromiter(
-        _get_crops_dataset_iter(t_imgs,masks,img_size),
-        dtype = (np.uint8,(2,img_size,img_size)))
-    
-    #HACK to finish the iterator
-    list(t_imgs)  
+    imgs_masks = tqdm(
+        imgs_masks,
+        desc='Augumenting and cropping input images',
+        total=len(masks))
 
-    X = np.array([ _ensure_three_chanels(i) for i in data[:,0]])
-    y = data[:,1].astype(bool)
-    X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.4, random_state=42)
-    y_train = y_train[...,np.newaxis]
-    y_test = y_test[...,np.newaxis]
+    crops = ( iter(augument_and_crop(img,mask)) for img,mask in imgs_mask)
+    chained = itertools.chain(crops)
+
+    data = np.fromiter(crops, dtype = (np.uint8,(2,img_size,img_size)))
     
-    return X_train, X_test, y_train, y_test
+    X = np.array([ _ensure_three_chanels(i) for i in data[:,0]])
+    y = data[:,1]
+    return X,y[:,:,:,np.newaxis] 
+#     X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.2, random_state=42)
+#     y_train = y_train[...,np.newaxis]
+#     y_test = y_test[...,np.newaxis]
+#     
+#     return X_train, X_test, y_train, y_test
 
 
 def _to_graylevel(img):
@@ -58,11 +61,13 @@ def _to_graylevel(img):
 def _to_binary(img):
     
     gs_img = _to_graylevel(img)
-    _,thr = cv2.threshold(gs_img,1,255,cv2.THRESH_BINARY)
-    return thr 
+
+    return np.int8(gs_img >=255)*255
+#    _,thr = cv2.threshold(gs_img,128,255,cv2.THRESH_BINARY)
+#    return thr 
     
 
-def _read_dataset(dataset_root):
+def _read_image_mask_pair(dataset_root):
     """
     This method assumes that each image is named img.png and is located
     in a separate folder along with label named mask.png
@@ -76,7 +81,7 @@ def _read_dataset(dataset_root):
     masks = map(imageio.imread,masks_p)
     masks_bin = map(_to_binary,masks)
 
-    return list(imgs_gray),list(masks_bin)
+    return list(zip(imgs_gray,masks_bin))
 
 
 def _rotate_image(image, angle):
@@ -120,13 +125,7 @@ def augument_and_crop(img,mask,size,seed= 4567):
     
     crops =  np.stack([img_crops,mask_crops])
     return np.swapaxes(crops,0,1)
-
-def _get_crops_dataset_iter(imgs,masks, size):
-    for img,mask in zip(imgs,masks):
-        crops = augument_and_crop(img,mask,size)    
-        for img_crop,mask_crop in crops:
-            yield img_crop,mask_crop
-            
+ 
 def _ensure_three_chanels(img):
     if len(img.shape) != 3 or img.shape[2]!=3:
         return np.dstack([img]*3)

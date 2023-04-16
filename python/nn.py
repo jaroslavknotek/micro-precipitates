@@ -98,18 +98,18 @@ def compose_unet(IMAGE_HEIGHT,IMAGE_WIDTH,IMG_CHANNELS):
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])])
     return model
 
-def _train_model(model,X_train,y_train,model_path):
+def _train_model(model,X_train,y_train,model_path,validation_split = .2):
     earlystopper = EarlyStopping(patience=5, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     results = model.fit(
         X_train, 
         y_train, 
-        validation_split=0.1, 
+        validation_split=validation_split, 
         batch_size=16, 
         epochs=50,
         callbacks=[earlystopper, checkpointer])
     
-def train(img_size,channels,model_path, X_train, X_test, y_train, y_test ):
+def train(img_size,channels,model_path, X_train, y_train):
     model = compose_unet(img_size,img_size,channels)
     _train_model(model, X_train,y_train, str(model_path))
     return load_model(model_path)

@@ -20,7 +20,7 @@ DATA_ROOT = "data/20230415"
 MODEL_PATH = "model/model-20230416.h5"
 
 if __name__ =='__main__':
-    X_train, X_test, y_train, y_test = dataset.read_dataset(DATA_ROOT,IMG_SIZE)
+    X_train, y_train = dataset.read_dataset(DATA_ROOT,IMG_SIZE)
 
     print("Prepare model")
     model_path = pathlib.Path(MODEL_PATH)
@@ -28,6 +28,6 @@ if __name__ =='__main__':
         print(f"Model already exists")
     else:
         print(f"Existing model not found at {model_path}. Training started")
-        model = nn.train(IMG_SIZE,IMG_CHANNELS,model_path, X_train, X_test, y_train, y_test )
+        model = nn.train(IMG_SIZE,IMG_CHANNELS,model_path, X_train, y_train)
         print("Success")
 
