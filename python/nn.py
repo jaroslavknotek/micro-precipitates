@@ -35,7 +35,6 @@ def predict(model, img, img_size=128, prediction_threshold = .5):
     preds_test = model.predict(test_data, verbose=0)
     preds_test = preds_test[...,0]
     preds_mask  =_decut_mask(preds_test,square_size)
-#    return preds_mask
     return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
 def compose_unet(IMAGE_HEIGHT,IMAGE_WIDTH,IMG_CHANNELS):

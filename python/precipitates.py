@@ -33,7 +33,11 @@ def load_microscope_img(path):
     img = imageio.imread(path)
     width = img.shape[1]
     # ensure square
-    return img[:width,:]
+    cropped = img[:width,:]
+    norm = cropped.astype(float)/np.max(cropped)*255
+
+    return norm.astype(np.uint8)
+    
 
 def extract_raw_mask(img,threshold,min_prec_size = 3):
     bcg_normed = img_tools.background_divide(img)
