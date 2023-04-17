@@ -9,15 +9,11 @@ import itertools
 import sklearn.model_selection
 
 def dump_dataset(dataset_root, out_dir ,img_size = 128):
-    imgs,masks = _read_dataset(dataset_root)
-    out_dir = pathlib.Path(out_dir)    
-    t_imgs = tqdm(imgs,desc='Augumenting and cropping input images',total=len(masks))
-    # data = np.array(list(_get_crops_dataset_iter(t_imgs,masks,img_size)))
-    data = _get_crops_dataset_iter(t_imgs,masks,img_size)
+    
+    crops_iter = _read_dataset_crops(dataset_root, img_size)
     
     zeros = 6
-
-    for i,(img,mask) in enumerate(data):
+    for i,(img,mask) in enumerate(crops_iter):
         suffix = str(i).zfill(zeros)
         mask_path = out_dir/"mask"/f"img_{suffix}.png"
         mask_path.parent.mkdir(exist_ok=True,parents=True)
@@ -27,19 +23,26 @@ def dump_dataset(dataset_root, out_dir ,img_size = 128):
         img_path.parent.mkdir(exist_ok=True,parents=True)
         imageio.imwrite(img_path,img)
 
+def _read_dataset_crops(dataset_root,img_size):
 
-def read_dataset(dataset_root,img_size):
     imgs_masks = _read_image_mask_pair(dataset_root)
     
     imgs_masks = tqdm(
         imgs_masks,
         desc='Augumenting and cropping input images',
-        total=len(masks))
+        total=len(imgs_masks))
 
-    crops = ( iter(augument_and_crop(img,mask)) for img,mask in imgs_mask)
-    chained = itertools.chain(crops)
+    crops_iters = ( augument_and_crop(img,mask,img_size) for img,mask in imgs_masks)
+    return _mychain(crops_iters)
 
-    data = np.fromiter(crops, dtype = (np.uint8,(2,img_size,img_size)))
+def _mychain(iterables):
+    for it in iterables:
+        for item in it:
+            yield item
+
+def read_dataset(dataset_root,img_size):
+    crops_iter = _iter_crop_pair(dataset_root,img_size)
+    data = np.fromiter(crops_iter, dtype = (np.uint8,(2,img_size,img_size)))
     
     X = np.array([ _ensure_three_chanels(i) for i in data[:,0]])
     y = data[:,1]
@@ -91,11 +94,10 @@ def _rotate_image(image, angle):
     return cv2.warpAffine(image, rot_mat,(w,h), flags=cv2.INTER_CUBIC)
     
 
-def augument_and_crop(img,mask,size,seed= 4567):
+def augument_and_crop(img,mask,size,stride = 8,seed= 4567):
     np.random.seed = seed
     padded_size = int(np.ceil(np.sqrt(2)*size) +1)    
     
-    stride = 10
     shape = (padded_size,padded_size)
     imgs = np.lib.stride_tricks.sliding_window_view(img,shape)[::stride,::stride].reshape((-1,*shape))
     masks = np.lib.stride_tricks.sliding_window_view(mask,shape)[::stride,::stride].reshape((-1,*shape))
@@ -123,8 +125,7 @@ def augument_and_crop(img,mask,size,seed= 4567):
     img_crops = np.array(list(imgs_f),dtype=np.uint8)[:,t:b,l:r]
     mask_crops= np.array(list(masks_f),dtype=np.uint8)[:,t:b,l:r]
     
-    crops =  np.stack([img_crops,mask_crops])
-    return np.swapaxes(crops,0,1)
+    return zip(img_crops,mask_crops)
  
 def _ensure_three_chanels(img):
     if len(img.shape) != 3 or img.shape[2]!=3:
