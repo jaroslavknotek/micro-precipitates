@@ -148,7 +148,7 @@ if __name__ == "__main__":
     args = _parse_args()
 
 
-    IMG_EXTS = ['.png','.jpg','.jpg','.tif','.tiff']
+    IMG_EXTS = ['.png','.jpg','.jpeg','.tif','.tiff']
     img_paths = [file for file in pathlib.Path(args.imgfolder).rglob("*.*") if
         file.suffix in IMG_EXTS]
     model = nn.load_model(args.modelpath)

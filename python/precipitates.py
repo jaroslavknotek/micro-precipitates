@@ -38,13 +38,6 @@ def load_microscope_img(path):
 
     return norm.astype(np.uint8)
     
-
-def extract_raw_mask(img,threshold,min_prec_size = 3):
-    bcg_normed = img_tools.background_divide(img)
-    gs_closed = img_tools.morph_grayscale_close(bcg_normed, min_prec_size)
-    img_normed = img_tools.norm(gs_closed)
-    return img_tools.threshold(img_normed, threshold)
-
 def identify_precipitates_from_mask(prec_mask):
     bbs = img_tools.extract_component_with_bounding_boxes(prec_mask)
     
