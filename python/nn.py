@@ -11,7 +11,7 @@ from skimage.transform import resize
 from skimage.morphology import label
 
 from keras.models import Model
-from keras.layers import Input
+from keras.layers import Input,Flatten,RepeatVector,Reshape
 from keras.layers.core import Dropout, Lambda
 from keras.layers.convolutional import Conv2D, Conv2DTranspose
 from keras.layers.pooling import MaxPooling2D
@@ -37,11 +37,14 @@ def predict(model, img, img_size=128, prediction_threshold = .5):
     preds_mask  =_decut_mask(preds_test,square_size)
     return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
-def compose_unet(IMAGE_HEIGHT,IMAGE_WIDTH,IMG_CHANNELS):
+def compose_unet(crop_shape):
+    assert len(crop_shape) ==2
+    
     # Build U-Net model
-    inputs = Input((IMAGE_HEIGHT,IMAGE_WIDTH, IMG_CHANNELS))
-    s = Lambda(lambda x: x / 255) (inputs)
-
+    inputs = Input((crop_shape[0],crop_shape[1],3))
+    
+    s = Lambda(lambda x: x)(inputs)
+    
     c1 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (s)
     c1 = Dropout(0.1) (c1)
     c1 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c1)
@@ -93,8 +96,11 @@ def compose_unet(IMAGE_HEIGHT,IMAGE_WIDTH,IMG_CHANNELS):
     outputs = Conv2D(1, (1, 1), activation='sigmoid') (c9)
 
     model = Model(inputs=[inputs], outputs=[outputs])
-
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])])
+    model.compile(
+        optimizer='adam', 
+        loss='binary_crossentropy', 
+        metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])],
+        run_eagerly = True)
     return model
 
 def _train_model(model,X_train,y_train,model_path,validation_split = .2):

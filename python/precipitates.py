@@ -30,7 +30,12 @@ def _crop_bottom_bar(img,bar_height = 120):
     return img[:-bar_height]
 
 def load_microscope_img(path):
-    img = imageio.imread(path)
+    img = np.squeeze(imageio.imread(path))
+    if len(img.shape) == 3 and img.shape[2] == 3:
+        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
+    elif len(img.shape) == 3 and img.shape[2] == 4:
+        img = cv2.cvtColor(img,cv2.COLOR_RGBA2GRAY)
+        
     width = img.shape[1]
     # ensure square
     cropped = img[:width,:]

@@ -1,133 +1,108 @@
-import pathlib
-import imageio
-import shutil
-import cv2
-from tqdm.auto import tqdm
+import tensorflow as tf
+import precipitates
 import numpy as np
+import matplotlib.pyplot as plt
+import pathlib
 import itertools
 
-import sklearn.model_selection
+from tensorflow.keras import layers
+import random
+import os 
 
-def dump_dataset(dataset_root, out_dir ,img_size = 128):
+def prepare_datasets(
+    train_data_root,
+    crop_stride = 8,
+    crop_shape=(128,128),
+    batch_size = 32,
+    repeat_data = 2,
+    seed = 123,
+    validation_split_factor = .2):
     
-    crops_iter = _read_dataset_crops(dataset_root, img_size)
+    img_paths = list(train_data_root.rglob("img.png"))
+    mask_paths = list(train_data_root.rglob("mask.png"))
+    assert len(img_paths) != 0 and len(mask_paths) != 0, "Empty dataset"
+    assert len(img_paths) == len(mask_paths), "number of masks is not equal to number of images"
     
-    zeros = 6
-    for i,(img,mask) in enumerate(crops_iter):
-        suffix = str(i).zfill(zeros)
-        mask_path = out_dir/"mask"/f"img_{suffix}.png"
-        mask_path.parent.mkdir(exist_ok=True,parents=True)
-        imageio.imwrite(mask_path,mask)
+    ds_len,dataset = _get_crops_dataset(img_paths,mask_paths,crop_stride=crop_stride,crop_shape=crop_shape ,generator=True)
+    augument = _get_augumentation(seed=seed)
+    augumented = dataset.repeat(repeat_data).map(augument,num_parallel_calls=tf.data.AUTOTUNE).shuffle(200,seed=seed).map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
 
-        img_path = out_dir/"img"/f"img_{suffix}.png"
-        img_path.parent.mkdir(exist_ok=True,parents=True)
-        imageio.imwrite(img_path,img)
-
-def _read_dataset_crops(dataset_root,img_size):
-
-    imgs_masks = _read_image_mask_pair(dataset_root)
+    augumented_dataset_len = ds_len*repeat_data
+    validation_size = int(augumented_dataset_len * validation_split_factor)
+    val_ds = augumented.take(validation_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    train_ds = augumented.skip(validation_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
     
-    imgs_masks = tqdm(
-        imgs_masks,
-        desc='Augumenting and cropping input images',
-        total=len(imgs_masks))
-
-    crops_iters = ( augument_and_crop(img,mask,img_size) for img,mask in imgs_masks)
-    return _mychain(crops_iters)
-
-def _mychain(iterables):
-    for it in iterables:
-        for item in it:
-            yield item
-
-def read_dataset(dataset_root,img_size):
-    crops_iter = _iter_crop_pair(dataset_root,img_size)
-    data = np.fromiter(crops_iter, dtype = (np.uint8,(2,img_size,img_size)))
-    
-    X = np.array([ _ensure_three_chanels(i) for i in data[:,0]])
-    y = data[:,1]
-    return X,y[:,:,:,np.newaxis] 
-#     X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.2, random_state=42)
-#     y_train = y_train[...,np.newaxis]
-#     y_test = y_test[...,np.newaxis]
-#     
-#     return X_train, X_test, y_train, y_test
+    steps_per_epoch = (augumented_dataset_len-validation_size) // batch_size
+    return train_ds,val_ds,steps_per_epoch
 
 
-def _to_graylevel(img):
-    if len(img.shape) == 3 and img.shape[2] == 3:
-        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
-    if len(img.shape) == 3 and img.shape[2] == 4:
-        img = cv2.cvtColor(img,cv2.COLOR_RGBA2GRAY)
-    return img
-    
-def _to_binary(img):
-    
-    gs_img = _to_graylevel(img)
-
-    return np.int8(gs_img >=255)*255
-#    _,thr = cv2.threshold(gs_img,128,255,cv2.THRESH_BINARY)
-#    return thr 
-    
-
-def _read_image_mask_pair(dataset_root):
-    """
-    This method assumes that each image is named img.png and is located
-    in a separate folder along with label named mask.png
-    """
-    folder_path = pathlib.Path(dataset_root)
-    imgs_p = list(folder_path.rglob("img.png"))
-    masks_p = [img.parent/'mask.png' for img in imgs_p]
-    
-    imgs = map(imageio.imread, imgs_p)
-    imgs_gray = map(_to_graylevel,imgs)
-    masks = map(imageio.imread,masks_p)
-    masks_bin = map(_to_binary,masks)
-
-    return list(zip(imgs_gray,masks_bin))
+def img2crops(img, stride, shape):
+    slider = np.lib.stride_tricks.sliding_window_view(img,shape)
+    strider =  slider[::stride,::stride]
+    return strider.reshape((-1,*shape))[:,:,:]
 
 
-def _rotate_image(image, angle):
-    h,w = image.shape
-    image_center = w/2,h/2
-    rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-    return cv2.warpAffine(image, rot_mat,(w,h), flags=cv2.INTER_CUBIC)
     
+def get_crops_iterator(img_paths,stride, shape = (128,128)):
+    imgs = map(precipitates.load_microscope_img,img_paths)
+    
+    crop_sets_it = (img2crops(img.astype(np.float32),stride, shape) for img in imgs)
+    for it in itertools.chain( crop_sets_it):
+        yield from it
 
-def augument_and_crop(img,mask,size,stride = 8,seed= 4567):
-    np.random.seed = seed
-    padded_size = int(np.ceil(np.sqrt(2)*size) +1)    
+def _estimate_dataset_size(img_paths,stride, shape):
+    imgs = map(precipitates.load_microscope_img,img_paths)
     
-    shape = (padded_size,padded_size)
-    imgs = np.lib.stride_tricks.sliding_window_view(img,shape)[::stride,::stride].reshape((-1,*shape))
-    masks = np.lib.stride_tricks.sliding_window_view(mask,shape)[::stride,::stride].reshape((-1,*shape))
-    n=len(imgs)
-    #rotate
-    angles =np.random.uniform(0,360,size=n)
-    imgs_r= (_rotate_image(i,a) for i,a in zip(imgs,angles))
-    masks_r= (_rotate_image(i,a) for i,a in zip(masks,angles))
+    total =0
+    for img in imgs:
+        ch,cw = shape
+        h,w = img.shape
+        h_steps=(h-ch)/stride +1
+        w_steps=(w-cw)/stride +1
+        crops = h_steps*w_steps
+        total += int(crops)
+    return total
+
+
+def _get_crops_dataset(
+    img_paths,
+    mask_paths,
+    crop_stride = 128,
+    crop_shape= (128,128),
+    generator=False):
+    img_paths = list(img_paths)
     
-    #flip
-    flip_probability = .5
-    flips = np.random.uniform(0,1,size=n)<flip_probability
-    imgs_f= ((np.flip(i) if f else i) for i,f in zip(imgs_r,flips))
-    masks_f= ((np.flip(i) if f else i) for i,f in zip(masks_r,flips))
+    tensor_shape = (crop_shape[0],crop_shape[1],4)
+    img_crops_it =  get_crops_iterator(img_paths,crop_stride,crop_shape)
+    mask_crops_it = get_crops_iterator(mask_paths,crop_stride,crop_shape)
     
-    # TODO scale ?
+    three_channels =  (np.dstack([i,i,i,m])/255 for i,m in zip(img_crops_it,mask_crops_it))
+    if generator:
+        dataset_size = _estimate_dataset_size(img_paths,crop_stride,crop_shape)
+        return dataset_size, tf.data.Dataset.from_generator(
+            lambda: three_channels ,
+            output_signature=tf.TensorSpec(shape=tensor_shape))
+    else:
+        arr = np.fromiter( three_channels ,dtype=(np.float32,tensor_shape))
+        dataset_size = arr.shape[0]
+        return dataset_size, tf.data.Dataset.from_tensor_slices(arr[...])
+
     
-    # crop
-    c = padded_size//2
-    t = c-size//2
-    b = t +size
-    l = t
-    r = b    
-    
-    img_crops = np.array(list(imgs_f),dtype=np.uint8)[:,t:b,l:r]
-    mask_crops= np.array(list(masks_f),dtype=np.uint8)[:,t:b,l:r]
-    
-    return zip(img_crops,mask_crops)
- 
-def _ensure_three_chanels(img):
-    if len(img.shape) != 3 or img.shape[2]!=3:
-        return np.dstack([img]*3)
-    return img
+def reset_random_seeds(seed):
+    os.environ['PYTHONHASHSEED']=str(seed)
+    tf.random.set_seed(seed)
+    np.random.seed = (seed)
+    random.seed = seed
+
+@tf.function
+def _split_imgmask(imgmask):
+    img = imgmask[:,:,:3]
+    mask = imgmask[:,:,-1]
+    return (img,mask)
+
+def _get_augumentation(seed=123):
+    return tf.keras.Sequential([
+        layers.RandomFlip("horizontal_and_vertical",seed=seed),
+        layers.RandomRotation(0.5,seed=seed),
+        layers.RandomZoom(height_factor=(-.05,.3),width_factor=(-.05,.3),seed=seed),
+    ])

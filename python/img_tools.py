@@ -90,3 +90,76 @@ def extract_component_with_bounding_boxes(binary_img):
     return [ ((t,b,l,r),c[t:b,l:r]) for (t,b,l,r),c in bbs]
 
 
+def _extract_grain_mask(labels,grain_id):
+    grain = labels.copy()
+    grain[labels == grain_id] = 1
+    grain[labels != grain_id] = 0
+    
+    if (grain == 0).all():
+        raise Exception(f"Grain {grain_id} not found")
+    
+    return grain
+
+    
+def _pair_grains(predicted,label):
+    p_n, p_grains = cv2.connectedComponents(predicted)
+    l_n, l_grains = cv2.connectedComponents(label)
+    pairs = []
+    for p_grain_id in range(1,p_n):
+        p_grain_mask = _extract_grain_mask(p_grains,p_grain_id)
+        
+        l_grain_id = np.max(p_grain_mask*l_grains)
+        
+        
+        if l_grain_id!=0:
+            l_grain_mask = _extract_grain_mask(l_grains,l_grain_id)
+        else:
+            l_grain_id = None
+            l_grain_mask = None
+            
+        pairs_rec = (
+            p_grain_id,
+            l_grain_id,
+            p_grain_mask,
+            l_grain_mask,
+        )
+        pairs.append(pairs_rec)
+    
+    used_labels = [ l[1] for l in pairs]
+    false_negatives = [fn for fn in np.arange(1,l_n) if fn not in used_labels]
+    for fn in false_negatives:
+        l_grain_mask = _extract_grain_mask(l_grains,fn)
+        pairs.append((None,fn,None,l_grain_mask))
+    return pd.DataFrame(pairs,columns = ['pred_id','label_id','pred_mask','label_mask'])    
+
+
+def compare(predicted,label,include_df = False):
+    df =  _pair_grains(predicted,label)
+    
+    grains_pred = df['pred_id'].max()
+    grains_label = df['label_id'].max()
+
+    # todo check that pairs are not twice
+    tp = len(df[ ~df['label_id'].isna() & ~df['pred_id'].isna()])
+    fp = len(df[ df['label_id'].isna() & ~df['pred_id'].isna()])
+    fn = len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
+    tn = 0 #len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
+
+    precision = np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_pred
+    
+    recall =  np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_label
+    
+    
+    if not include_df:
+        return precision,recall
+    return precision,recall,df
+    
+def _print_confusion_matrix(conmat):
+    df_cm = pd.DataFrame(conmat, index = ["D","ND"],columns=["D","ND"])
+    sn.heatmap(df_cm, annot=True,fmt = 'd') # font size
+    
+def _filter_small(img):
+    kernel = np.zeros((4,4),dtype=np.uint8)
+    kernel[1:3,:]=1
+    kernel[:,1:3]=1
+    return cv2.morphologyEx(img,cv2.MORPH_OPEN,kernel)
