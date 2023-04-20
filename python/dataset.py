@@ -14,7 +14,6 @@ def prepare_datasets(
     crop_stride = 8,
     crop_shape=(128,128),
     batch_size = 32,
-    repeat_data = 2,
     seed = 123,
     validation_split_factor = .2):
     
@@ -24,7 +23,7 @@ def prepare_datasets(
     assert len(img_paths) != 0 and len(mask_paths) != 0, "Empty dataset"
     assert len(img_paths) == len(mask_paths), "number of masks is not equal to number of images"
     
-    ds_len,dataset = _get_crops_dataset(
+    augumented_dataset_len,dataset = _get_crops_dataset(
         img_paths,
         mask_paths,
         crop_stride=crop_stride,
@@ -32,21 +31,18 @@ def prepare_datasets(
         generator=True)
     
     augument = _get_augumentation(seed=seed)
-    dataset = dataset.map(augument,num_parallel_calls=tf.data.AUTOTUNE).map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
-    
-    
-    augumented_dataset_len = ds_len*repeat_data
+    dataset = (dataset
+               .cache()
+               .shuffle(batch_size)
+               .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
+               .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE))
     #size cropped to batch size
     train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
     val_size = int((augumented_dataset_len - train_size)//32 *32)
     
-    steps_per_epoch = train_size//batch_size
-    
-    dataset=  dataset.cache().repeat(repeat_data).shuffle(batch_size)
-    
-
-    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=False).prefetch(tf.data.AUTOTUNE)
-    val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=False).prefetch(tf.data.AUTOTUNE)
+    steps_per_epoch = train_size//batch_size 
+    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
 
     return train_ds,val_ds,steps_per_epoch
 
@@ -124,7 +120,7 @@ def reset_random_seeds(seed):
 @tf.function
 def _split_imgmask(imgmask):
     img = imgmask[:,:,:3]
-    mask = imgmask[:,:,-1]
+    mask = tf.expand_dims(imgmask[:,:,-1],axis=2)
     return (img,mask)
 
 def _get_augumentation(seed=123):
