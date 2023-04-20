@@ -23,7 +23,7 @@ class DisplayCallback(tf.keras.callbacks.Callback):
 
                 
 
-def run_training(train_data,dump_output=None,crop_stride = 8):
+def run(train_data,dump_output=None,crop_stride = 8):
     
     training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
     
@@ -57,4 +57,5 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
 if __name__ == "__main__":
     dump_output =pathlib.Path("../tmp/20230419")
     train_data = pathlib.Path("../data/20230415/labeled")
+    
     run_training(train_data,dump_output)
