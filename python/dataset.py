@@ -18,21 +18,36 @@ def prepare_datasets(
     seed = 123,
     validation_split_factor = .2):
     
+    
     img_paths = list(train_data_root.rglob("img.png"))
     mask_paths = list(train_data_root.rglob("mask.png"))
     assert len(img_paths) != 0 and len(mask_paths) != 0, "Empty dataset"
     assert len(img_paths) == len(mask_paths), "number of masks is not equal to number of images"
     
-    ds_len,dataset = _get_crops_dataset(img_paths,mask_paths,crop_stride=crop_stride,crop_shape=crop_shape ,generator=True)
-    augument = _get_augumentation(seed=seed)
-    augumented = dataset.repeat(repeat_data).map(augument,num_parallel_calls=tf.data.AUTOTUNE).shuffle(200,seed=seed).map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
-
-    augumented_dataset_len = ds_len*repeat_data
-    validation_size = int(augumented_dataset_len * validation_split_factor)
-    val_ds = augumented.take(validation_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    train_ds = augumented.skip(validation_size).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    ds_len,dataset = _get_crops_dataset(
+        img_paths,
+        mask_paths,
+        crop_stride=crop_stride,
+        crop_shape=crop_shape ,
+        generator=True)
     
-    steps_per_epoch = (augumented_dataset_len-validation_size) // batch_size
+    augument = _get_augumentation(seed=seed)
+    dataset = dataset.map(augument,num_parallel_calls=tf.data.AUTOTUNE).map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
+    
+    
+    augumented_dataset_len = ds_len*repeat_data
+    #size cropped to batch size
+    train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
+    val_size = int((augumented_dataset_len - train_size)//32 *32)
+    
+    steps_per_epoch = train_size//batch_size
+    
+    dataset=  dataset.cache().repeat(repeat_data).shuffle(batch_size)
+    
+
+    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=False).prefetch(tf.data.AUTOTUNE)
+    val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=False).prefetch(tf.data.AUTOTUNE)
+
     return train_ds,val_ds,steps_per_epoch
 
 
@@ -50,18 +65,30 @@ def get_crops_iterator(img_paths,stride, shape = (128,128)):
     for it in itertools.chain( crop_sets_it):
         yield from it
 
-def _estimate_dataset_size(img_paths,stride, shape):
-    imgs = map(precipitates.load_microscope_img,img_paths)
+def _estimate_img_crops(img_shape,crop_shape,stride):
     
-    total =0
-    for img in imgs:
-        ch,cw = shape
-        h,w = img.shape
-        h_steps=(h-ch)/stride +1
-        w_steps=(w-cw)/stride +1
-        crops = h_steps*w_steps
-        total += int(crops)
-    return total
+    h,w = img_shape
+    ch,cw = crop_shape
+    assert ch <= h and cw <= w, f"Image is smaller than crop f{(w,h)} vs {(cw,ch)}"
+    
+    if stride <= ch:
+        h_steps=(h-ch)//stride +1
+    else:
+        h_steps=(h)//stride +1
+        
+    crop_per_size = []
+    for c,s in [(ch,h),(cw,w)]:
+        steps = 1 + (s-c)//stride
+        crop_per_size.append(steps)
+        
+    h_steps,w_steps = crop_per_size
+    return h_steps*w_steps
+    
+def _estimate_dataset_size(img_paths,stride, crop_shape):
+    imgs = map(precipitates.load_microscope_img,img_paths)
+    ch,cw = crop_shape
+    
+    return sum([_estimate_img_crops(img.shape, crop_shape,stride) for img in imgs])
 
 
 def _get_crops_dataset(
@@ -78,7 +105,7 @@ def _get_crops_dataset(
     
     three_channels =  (np.dstack([i,i,i,m])/255 for i,m in zip(img_crops_it,mask_crops_it))
     if generator:
-        dataset_size = _estimate_dataset_size(img_paths,crop_stride,crop_shape)
+        dataset_size = _estimate_dataset_size(img_paths,crop_stride,crop_shape) 
         return dataset_size, tf.data.Dataset.from_generator(
             lambda: three_channels ,
             output_signature=tf.TensorSpec(shape=tensor_shape))
