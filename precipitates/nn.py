@@ -22,7 +22,7 @@ from keras import backend as K
 import keras.models
 import tensorflow as tf
 
-import dataset
+import precipitates.dataset as dataset
 warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
 seed = 42
 random.seed = seed

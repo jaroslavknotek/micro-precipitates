@@ -1,4 +1,4 @@
-import img_tools
+import precipitates.img_tools as img_tools
 import cv2
 import numpy as np
 import imageio

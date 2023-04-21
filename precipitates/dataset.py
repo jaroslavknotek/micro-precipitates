@@ -1,5 +1,5 @@
 import tensorflow as tf
-import precipitates
+import precipitates.precipitate as precipitate
 import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
@@ -55,7 +55,7 @@ def img2crops(img, stride, shape):
 
     
 def get_crops_iterator(img_paths,stride, shape = (128,128)):
-    imgs = map(precipitates.load_microscope_img,img_paths)
+    imgs = map(precipitate.load_microscope_img,img_paths)
     
     crop_sets_it = (img2crops(img.astype(np.float32),stride, shape) for img in imgs)
     for it in itertools.chain( crop_sets_it):
@@ -81,7 +81,7 @@ def _estimate_img_crops(img_shape,crop_shape,stride):
     return h_steps*w_steps
     
 def _estimate_dataset_size(img_paths,stride, crop_shape):
-    imgs = map(precipitates.load_microscope_img,img_paths)
+    imgs = map(precipitate.load_microscope_img,img_paths)
     ch,cw = crop_shape
     
     return sum([_estimate_img_crops(img.shape, crop_shape,stride) for img in imgs])

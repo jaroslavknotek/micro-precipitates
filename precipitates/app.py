@@ -1,6 +1,6 @@
-import visualization
-import nn
-import precipitates
+import precipitates.visualization as visuzalization
+import precipitates.nn as nn
+import precipitates.precipitates as precipitates
 import numpy as np
 import imageio
 import matplotlib.pyplot as plt

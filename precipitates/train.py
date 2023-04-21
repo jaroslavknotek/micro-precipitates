@@ -1,10 +1,10 @@
-import dataset as ds
+import precipitates.dataset as ds
 import tensorflow as tf
 import pathlib
 import imageio
 import nn
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-import precipitates
+import precipitates.precipitate as precipitate
 
 from datetime import datetime
 
@@ -33,8 +33,8 @@ def run(train_data,dump_output=None,crop_stride = 8):
 
     CROP_SHAPE= (128,128)
 
-    test_img1 = precipitates.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
-    test_img2 = precipitates.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
+    test_img1 = precipitate.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
+    test_img2 = precipitate.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
     test_imgs = [test_img1,test_img2]
 
     model = nn.compose_unet(CROP_SHAPE)
