@@ -1,4 +1,4 @@
-import img_tools
+import precipitates.img_tools as img_tools
 import cv2
 import numpy as np
 import imageio
@@ -29,58 +29,33 @@ class PrecipitateShape:
 def _crop_bottom_bar(img,bar_height = 120):
     return img[:-bar_height]
 
-def _improve_prec_mask_detail(
-    precipitate_mask,
-    precipitate_image,
-    shape_threshold):
-    
-    shape_raw = precipitate_image<=shape_threshold
-    
-    shape_fill_gaps = np.bitwise_or(shape_raw,precipitate_mask)
-    
-    dilate_mask = cv2.dilate(precipitate_mask ,np.ones((3,3)))
-    return np.bitwise_and(shape_fill_gaps,dilate_mask).astype(np.uint8)
+def load_microscope_img(path):
+    img = np.squeeze(imageio.imread(path))
+    if len(img.shape) == 3 and img.shape[2] == 3:
+        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
+    elif len(img.shape) == 3 and img.shape[2] == 4:
+        img = cv2.cvtColor(img,cv2.COLOR_RGBA2GRAY)
+        
+    width = img.shape[1]
+    # ensure square
+    cropped = img[:width,:]
+    norm = cropped.astype(float)/np.max(cropped)*255
 
-
-def load_microscope_img(path,has_bottom_bar=True):
-    img = imageio.imread(path)
-    if has_bottom_bar:
-        img = _crop_bottom_bar(img)
-    return img_tools.norm(img)
-
-def extract_raw_mask(img,threshold,min_prec_size = 3):
-    bcg_normed = img_tools.background_divide(img)
-    gs_closed = img_tools.morph_grayscale_close(bcg_normed, min_prec_size)
-    img_normed = img_tools.norm(gs_closed)
-    return img_tools.threshold(img_normed, threshold)
-
-def identify_precipitates(img,threshold):
+    return norm.astype(np.uint8)
     
-    # this mask is low res because of morphologocy operation (CLOSE)
-    # used in extract raw mask
-    prec_mask_low_res = extract_raw_mask(img,threshold)
-    bbs = img_tools.extract_component_with_bounding_boxes(prec_mask_low_res)
+def identify_precipitates_from_mask(prec_mask):
+    bbs = img_tools.extract_component_with_bounding_boxes(prec_mask)
     
-    prec_mask = np.zeros(img.shape)
     shapes = []
-    for (t,b,l,r),mask in bbs:
-        precipitate_image = img[t:b,l:r]
-    
-        detail_prec_mask = _improve_prec_mask_detail(
-            mask,
-            precipitate_image,
-            threshold
-        )
-    
-        prec_mask[t:b,l:r] = detail_prec_mask
+    for (t,b,l,r),mask in bbs: 
         prec = PrecipitateShape(
-            shape_mask = detail_prec_mask,
+            shape_mask = mask,
             top_left_x = l,
             top_left_y = t
         )
         shapes.append(prec)
     
-    return prec_mask, shapes
+    return shapes
 
 
 def extract_features(shape:PrecipitateShape) -> PrecipitateFeatures:
@@ -100,8 +75,8 @@ def extract_features(shape:PrecipitateShape) -> PrecipitateFeatures:
         e_width = circle_radius*2
         e_height = circle_radius*2
         angle = 0
-    
-    pixel_area = np.sum(shape.shape_mask)
+    # ... >0 ensures that you count only ones, not 255 
+    pixel_area = np.sum(shape.shape_mask>0)
     
     return PrecipitateFeatures(
         ellipse_width_px=e_width,
@@ -134,3 +109,4 @@ def classify_shape(
         return "shape_irregular"
     else:
         return "shape_circle"
+

@@ -136,3 +136,4 @@ output
 tmp
 *.ipynb
 /model
+/tmp

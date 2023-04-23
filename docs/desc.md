@@ -11,14 +11,27 @@ Precipitates Identification Based on Image Processing
 Given the input image, all dark spots smaller than 3x3 are removed by applying [morphological operator close](https://www.ni.com/docs/en-US/bundle/ni-vision-concepts-help/page/grayscale_morphology.html). Next, the precipitates are extracted using thresholding with arbitrary value. This operation results in a mask which is an image, of the same size as the input, with white color where precipitates are present and zeros where not precipitate was found. In general, each precipitate is represented as an "island" of white in a "sea" of zeros and can be easily extracted. 
 
 For each individual precipitate shape, the following three properties are calculated:
+
 - circumscribed circle
 - approximating ellipse
 - area as a sum of all pixels
 
 Such features are used for a classification of shape type. A precipitate has shape of:
+
 - circle - if ellipse's axes are of similar length and area of precipitate is similar to the one of the circumscribed circle
 - needle - ellipse width is twice its height or vice versa
 - irregular - otherwise
+
+rok za krokem:
+
+    Identifikujeme precipitáty pomocí neuronové sítě (NN)
+    Pro každý individální precipitát pak provedem následující
+        Spočteme počet pixelů a převedeme na micrometry
+        Proložíme masku elipsou algoritmem zde
+        Klasifikujeme tvar precipitátu do tříd níže pomocí daných pravidel:
+            Kruh - pokud se délky os nalezené elipsy podobají (+- 20%)
+            Jehla-  pokud je poměr větší osy ku menší 3/1 a větší
+            Neregularní - vše ostatní
 
 
 # Application Output Description
