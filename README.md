@@ -67,4 +67,6 @@ TODO
 
 TODO assuming some folder structure
 
+# NOTES
 
+- `setup.py` contains fixed version `2.8.0` because of bug in azure function. See [this](https://stackoverflow.com/questions/73696134/azure-how-to-deploy-a-functions-app-with-tensorflow/73704428#73704428)
