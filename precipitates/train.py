@@ -6,6 +6,7 @@ import nn
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import precipitates.precipitate as precipitate
 import precipitates.evaluation as evaluation
+
 import sys
 import logging
 from datetime import datetime
@@ -50,10 +51,8 @@ class DisplayCallback(tf.keras.callbacks.Callback):
             plt.savefig(path)
             json.dump(metrics_res,open(json_path,'w'))
             logger.info(f"Epoch {epoch} img:{i}: {json.dumps(metrics_res,indent=4)}")
-            
-            
-                
 def _norm(img):
+
     img_min=np.min(img)
     img_max = np.max(img)
     return (img.astype(float)-img_min) / (img_max-img_min)
@@ -62,7 +61,14 @@ def run_training(
     train_data,
     args,
     dump_output
-):
+):    
+    training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    
+    if dump_output is None:
+        dump_output =pathlib.Path("../tmp/")/training_timestamp
+        dump_output.mkdir(exist_ok=True,parents=True)
+    logging.debug("output:",dump_output)
+
     CROP_SHAPE= (128,128)
 
     model = nn.compose_unet(
@@ -101,9 +107,6 @@ def _parse_args(args_arr = None):
     parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc','wbc'])
     parser.add_argument('--train-data',required=True)
     
-    parser.add_argument('--wbc-weight-zero',required=False,default =1)
-    parser.add_argument('--wbc-weight-one',required=False,default=1)
-
     parser.add_argument('--output',required=False,default=default_output_path)
     parser.add_argument('--filter-size',default=0,type=int)
     parser.add_argument('--test-dir',required=False)
