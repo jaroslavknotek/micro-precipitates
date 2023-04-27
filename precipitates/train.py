@@ -52,7 +52,6 @@ class DisplayCallback(tf.keras.callbacks.Callback):
             logger.info(f"Epoch {epoch} img:{i}: {json.dumps(metrics_res,indent=4)}")
             
             
-
                 
 def _norm(img):
     img_min=np.min(img)
@@ -73,31 +72,17 @@ def run_training(
         weight_one = args.wbc_weight_one
     )
     
+
+    model = nn.compose_unet(CROP_SHAPE)
     model_path = pathlib.Path(dump_output/'model.h5')
 
-    earlystopper = EarlyStopping(patience=args.patience, verbose=1)
+    earlystopper = EarlyStopping(patience=5, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
-    
-    callbacks = [earlystopper,checkpointer]
-    if args.test_dir is not None:
-        test_img_mask_pairs=evaluation._read_test_imgs_mask_pairs(args.test_dir)
-        display = DisplayCallback(
-            dump_output,
-            model, 
-            test_img_mask_pairs,
-            args.filter_size
-        )
-        callbacks.append(display)
-        
-    logger.info("Reading Dataset")
-    train_ds,val_ds,spe = ds.prepare_datasets(
-        train_data,
-        crop_stride=args.crop_stride,
-        filter_size=args.filter_size
-    )
-    logger.info("Started Training")
-    logger.debug(f"Expected steps per epoch:{spe}")
+    display = DisplayCallback(dump_output, model, test_imgs)
+    callbacks = [earlystopper,checkpointer,display]
 
+    train_ds,val_ds,spe = ds.prepare_datasets(train_data,crop_stride=crop_stride)
+    logging.debug("Expected steps per epoch:", spe)
     results = model.fit(
         train_ds,
         validation_data= val_ds,
