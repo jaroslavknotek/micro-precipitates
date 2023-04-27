@@ -25,6 +25,10 @@ class DisplayCallback(tf.keras.callbacks.Callback):
             imageio.imwrite(path, pred)
 
                 
+def _norm(img):
+    img_min=np.min(img)
+    img_max = np.max(img)
+    return (img.astype(float)-img_min) / (img_max-img_min)
 
 def run_training(train_data,dump_output=None,crop_stride = 8):
     
@@ -39,7 +43,7 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
 
     test_img1 = precipitate.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
     test_img2 = precipitate.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
-    test_imgs = [test_img1,test_img2]
+    test_imgs = [_norm(img) for img in [test_img1,test_img2]]
 
     model = nn.compose_unet(CROP_SHAPE)
     model_path = pathlib.Path(dump_output/'model.h5')
