@@ -7,7 +7,8 @@ import itertools
 
 from tensorflow.keras import layers
 import random
-import os 
+import os
+import logging
 
 def prepare_datasets(
     train_data_root,
@@ -35,7 +36,8 @@ def prepare_datasets(
                .cache()
                .shuffle(batch_size)
                .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
-               .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE))
+               .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
+    )
     #size cropped to batch size
     train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
     val_size = int((augumented_dataset_len - train_size)//32 *32)
@@ -43,7 +45,14 @@ def prepare_datasets(
     steps_per_epoch = train_size//batch_size 
     train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-
+    
+    exists = False
+    for _ in val_ds:
+        exists = True
+    assert exists, "No item in validation found"
+    
+    logging.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
+    
     return train_ds,val_ds,steps_per_epoch
 
 
