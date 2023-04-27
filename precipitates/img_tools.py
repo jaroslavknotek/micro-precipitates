@@ -1,7 +1,7 @@
 import imageio
 import numpy as np
 import cv2
-
+import pandas as pd
 import scipy.ndimage
 
 def background_divide(img, foreground_sigma = 1, background_sigma_rel =.15  ):
@@ -101,9 +101,18 @@ def _extract_grain_mask(labels,grain_id):
     return grain
 
     
-def _pair_grains(predicted,label):
+def _pair_grains(predicted,label,cap = 500):
     p_n, p_grains = cv2.connectedComponents(predicted)
     l_n, l_grains = cv2.connectedComponents(label)
+    
+    if cap is not None:
+        p_n = min(cap,p_n)
+        p_grains [p_grains >cap] = 0
+        
+        l_n = min(cap,l_n)
+        l_grains [l_grains >cap] = 0
+    
+    
     pairs = []
     for p_grain_id in range(1,p_n):
         p_grain_mask = _extract_grain_mask(p_grains,p_grain_id)

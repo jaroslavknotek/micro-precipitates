@@ -52,7 +52,7 @@ def prepare_datasets(
     train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
     val_size = int((augumented_dataset_len - train_size)//32 *32)
     
-	train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     val_ds = dataset.skip(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     
  
