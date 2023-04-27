@@ -52,9 +52,8 @@ def prepare_datasets(
     train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
     val_size = int((augumented_dataset_len - train_size)//32 *32)
     
-    steps_per_epoch = train_size//batch_size 
-    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-    val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+	train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    val_ds = dataset.skip(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     
  
     logger.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
@@ -64,7 +63,6 @@ def prepare_datasets(
         pass
 
     return train_ds,val_ds,steps_per_epoch
-
 
 def img2crops(img, stride, shape):
     slider = np.lib.stride_tricks.sliding_window_view(img,shape)
