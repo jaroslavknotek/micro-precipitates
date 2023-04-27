@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='MicroPrec',
-    version='0.1',
+    version='0.2',
     description='Prec -> distribution',
     author='Jaroslav Knotek',
     author_email='knotekjaroslav@email.cz',
@@ -17,7 +17,7 @@ setup(name='MicroPrec',
         'imageio',
         'scikit-image',
         'scikit-learn',
-        'tensorflow==2.8.0',
+        'tensorflow',
         'matplotlib',
         'pandas'
     ]
