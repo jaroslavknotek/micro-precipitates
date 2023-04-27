@@ -9,7 +9,8 @@ import sys
 import logging
 from datetime import datetime
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("prec")
+logger.setLevel(logging.DEBUG)
 
 class DisplayCallback(tf.keras.callbacks.Callback):
     def __init__(self,dump_output,model,test_imgs):
@@ -32,7 +33,7 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
     if dump_output is None:
         dump_output =pathlib.Path("../tmp/")/training_timestamp
         dump_output.mkdir(exist_ok=True,parents=True)
-    logging.debug("output:",dump_output)
+    logger.debug("output:",dump_output)
 
     CROP_SHAPE= (128,128)
 
@@ -47,9 +48,11 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     display = DisplayCallback(dump_output, model, test_imgs)
     callbacks = [earlystopper,checkpointer,display]
-
+    logger.info("Reading Dataset")
     train_ds,val_ds,spe = ds.prepare_datasets(train_data,crop_stride=crop_stride)
-    logging.debug("Expected steps per epoch:", spe)
+    logger.info("Started Training")
+    logger.debug(f"Expected steps per epoch:{spe}")
+
     results = model.fit(
         train_ds,
         validation_data= val_ds,
@@ -59,4 +62,4 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
 
 if __name__ == "__main__":
     train_data = pathlib.Path( sys.argv[1])
-    run_training(train_data)
+    run_training(train_data,crop_stride=24)

@@ -10,6 +10,8 @@ import random
 import os
 import logging
 
+logger = logging.getLogger("prec")
+
 def prepare_datasets(
     train_data_root,
     crop_stride = 8,
@@ -21,9 +23,10 @@ def prepare_datasets(
     
     img_paths = list(train_data_root.rglob("img.png"))
     mask_paths = list(train_data_root.rglob("mask.png"))
+    logger.debug(f"Found {len(img_paths)} images")
     assert len(img_paths) != 0 and len(mask_paths) != 0, "Empty dataset"
     assert len(img_paths) == len(mask_paths), "number of masks is not equal to number of images"
-    
+ 
     augumented_dataset_len,dataset = _get_crops_dataset(
         img_paths,
         mask_paths,
@@ -31,9 +34,16 @@ def prepare_datasets(
         crop_shape=crop_shape ,
         generator=True)
     
+    cache_path= pathlib.Path('.')
+    for f in cache_path.rglob('.cache*'):
+        try:
+            os.remove(f)
+        except Exception as e :
+            logger.warn(f"deleting cache: {e}")
+
     augument = _get_augumentation(seed=seed)
     dataset = (dataset
-               .cache()
+               .cache('.cache')
                .shuffle(batch_size)
                .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
                .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
@@ -46,13 +56,13 @@ def prepare_datasets(
     train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     val_ds = dataset.skip(train_size).take(val_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     
-    exists = False
+ 
+    logger.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
+    
+    #hack force this to cache
     for _ in val_ds:
-        exists = True
-    assert exists, "No item in validation found"
-    
-    logging.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
-    
+        pass
+
     return train_ds,val_ds,steps_per_epoch
 
 

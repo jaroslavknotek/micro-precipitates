@@ -9,7 +9,7 @@ setup(name='MicroPrec',
     author_email='knotekjaroslav@email.cz',
     url='https://github.com/jaroslavknotek/micro-precipitates',
     packages=['precipitates'],
-    python_requires='>=3.9',
+#     python_requires='>=3.9',
     install_requires=[
         'numpy',
         'opencv-python',
