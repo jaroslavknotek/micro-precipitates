@@ -6,12 +6,13 @@ docker remove tf
 docker run \
     -it \
     --gpus all \
-	--name tf \
-	--mount type=bind,source="$HOME/source",target=/source \
-	--mount type=bind,source="/large_disk",target=/large_disk \
-	tensorflow/tensorflow:latest-gpu /bin/bash
+    --name tf \
+    --mount type=bind,source="$HOME/source",target=/source \
+    --mount type=bind,source="/large_disk",target=/large_disk \
+    tensorflow/tensorflow:latest-gpu /bin/bash
 #	-u $(id -u):$(id -g) \
 # todo run script
 #    bash -c "python -m venv /tmp/.venv & cd /source/jaroslavknotek/micro-precipitates & python -m pip install -e ."
     
-
+# curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+# python3.9 get-pip.py
