@@ -28,6 +28,41 @@ seed = 42
 random.seed = seed
 np.random.seed = seed
 
+class DynamicallyWeightedBinaryCrossentropy(tf.keras.losses.Loss):
+    def call(self, true, pred):
+        """
+        Calculates weighted binary cross entropy. The weights are determined dynamically
+        by the balance of each category. This weight is calculated for each batch.
+
+        The weights are calculted by determining the number of 'pos' and 'neg' classes 
+        in the true labels, then dividing by the number of total predictions.
+
+        For example if there is 1 pos class, and 99 neg class, then the weights are 1/100 and 99/100.
+        These weights can be applied so false negatives are weighted 99/100, while false postives are weighted
+        1/100. This prevents the classifier from labeling everything negative and getting 99% accuracy.
+
+        This can be useful for unbalanced catagories.
+        """
+        # get the total number of inputs
+        num_pred = keras.backend.sum(keras.backend.cast(pred < 0.5, true.dtype)) + keras.backend.sum(true)
+
+        # get weight of values in 'pos' category
+        zero_weight =  keras.backend.sum(true)/ num_pred +  keras.backend.epsilon() 
+
+        # get weight of values in 'false' category
+        one_weight = keras.backend.sum(keras.backend.cast(pred < 0.5, true.dtype)) / num_pred +  keras.backend.epsilon()
+
+        # calculate the weight vector
+        weights =  (1.0 - true) * zero_weight +  true * one_weight 
+
+        # calculate the binary cross entropy
+        bin_crossentropy = keras.backend.binary_crossentropy(true, pred)
+
+        # apply the weights
+        weighted_bin_crossentropy = weights * bin_crossentropy 
+
+        return keras.backend.mean(weighted_bin_crossentropy)
+
  
 def predict(model, img, img_size=128, prediction_threshold = .5):
     test_data_2d = _cut_to_pieces(img,img_size)
@@ -45,8 +80,15 @@ def predict(model, img, img_size=128, prediction_threshold = .5):
     preds_mask  =_decut_mask(preds_test,square_size)
     return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
-def compose_unet(crop_shape):
+def compose_unet(crop_shape,loss='bc'):
     assert len(crop_shape) ==2
+
+    if loss =='bc':
+        loss = tf.keras.losses.BinaryCrossentropy()
+    elif loss == 'dwbc':
+        loss = DynamicallyWeightedBinaryCrossentropy()
+    else:
+        raise Exception(f"Unrecognized loss {loss}")
     
     # Build U-Net model
     inputs = Input((crop_shape[0],crop_shape[1],3))
@@ -106,7 +148,8 @@ def compose_unet(crop_shape):
     model = Model(inputs=[inputs], outputs=[outputs])
     model.compile(
         optimizer='adam', 
-        loss='binary_crossentropy', 
+#        loss='binary_crossentropy', 
+		loss=loss,
         metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])],
         run_eagerly = True)
     return model
