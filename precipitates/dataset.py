@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
 import itertools
-
+import precipitates.img_tools
 from tensorflow.keras import layers
 import random
 import os
@@ -18,7 +18,8 @@ def prepare_datasets(
     crop_shape=(128,128),
     batch_size = 32,
     seed = 123,
-    validation_split_factor = .2):
+    validation_split_factor = .2,
+    filter_small = False):
     
     
     img_paths = list(train_data_root.rglob("img.png"))
@@ -32,7 +33,8 @@ def prepare_datasets(
         mask_paths,
         crop_stride=crop_stride,
         crop_shape=crop_shape ,
-        generator=True)
+        generator=True,
+        filter_small = filter_small)
     
     cache_path= pathlib.Path('.')
     for f in cache_path.rglob('.cache*'):
@@ -52,6 +54,7 @@ def prepare_datasets(
     train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
     val_size = int((augumented_dataset_len - train_size)//32 *32)
     
+    steps_per_epoch = train_size//batch_size 
     train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     val_ds = dataset.skip(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     
@@ -71,8 +74,11 @@ def img2crops(img, stride, shape):
 
 
     
-def get_crops_iterator(img_paths,stride, shape = (128,128)):
+def get_crops_iterator(img_paths,stride, shape = (128,128),filter_small = False):
     imgs = map(precipitate.load_microscope_img,img_paths)
+    
+    if filter_small:
+        imgs = map(precipitates.img_tools._filter_small, imgs)
     
     crop_sets_it = (img2crops(img.astype(np.float32),stride, shape) for img in imgs)
     for it in itertools.chain( crop_sets_it):
@@ -109,12 +115,19 @@ def _get_crops_dataset(
     mask_paths,
     crop_stride = 128,
     crop_shape= (128,128),
-    generator=False):
+    generator=False,
+    filter_small = False):
+    
     img_paths = list(img_paths)
     
     tensor_shape = (crop_shape[0],crop_shape[1],4)
     img_crops_it =  get_crops_iterator(img_paths,crop_stride,crop_shape)
-    mask_crops_it = get_crops_iterator(mask_paths,crop_stride,crop_shape)
+    mask_crops_it = get_crops_iterator(
+        mask_paths,
+        crop_stride,
+        crop_shape,
+        filter_small = filter_small
+    )
     
     three_channels =  (np.dstack([i,i,i,m])/255 for i,m in zip(img_crops_it,mask_crops_it))
     if generator:

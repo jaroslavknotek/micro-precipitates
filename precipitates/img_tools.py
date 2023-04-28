@@ -167,8 +167,8 @@ def _print_confusion_matrix(conmat):
     df_cm = pd.DataFrame(conmat, index = ["D","ND"],columns=["D","ND"])
     sn.heatmap(df_cm, annot=True,fmt = 'd') # font size
     
-def _filter_small(img):
-    kernel = np.zeros((4,4),dtype=np.uint8)
+def _filter_small(img,size=(4,4)):
+    kernel = np.zeros(size,dtype=np.uint8)
     kernel[1:3,:]=1
     kernel[:,1:3]=1
     return cv2.morphologyEx(img,cv2.MORPH_OPEN,kernel)
