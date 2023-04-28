@@ -73,7 +73,7 @@ def run_training(
 def _parse_args(default_output_path, args_arr = None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--crop-stride',required =True,type=int)
-    parser.add_argument('--loss',default = 'bc',choices = ['dwbc'])
+    parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc'])
     parser.add_argument('--train-data',required=True)
 
     parser.add_argument('--output',required=False,default=def_output)
