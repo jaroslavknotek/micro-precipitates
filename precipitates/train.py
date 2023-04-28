@@ -38,7 +38,8 @@ def run_training(
     crop_stride = 8,
     filter_small = False,
     loss='bc',
-    test_imgs=[]):
+    test_imgs=[],
+    patience = 5):
 
     logger.debug(f"Data: {train_data}")
     logger.debug(f"Data: {dump_output}")
@@ -50,7 +51,7 @@ def run_training(
     model = nn.compose_unet(CROP_SHAPE,loss=loss)
     model_path = pathlib.Path(dump_output/'model.h5')
 
-    earlystopper = EarlyStopping(patience=10, verbose=1)
+    earlystopper = EarlyStopping(patience=patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     display = DisplayCallback(dump_output, model, test_imgs)
     callbacks = [earlystopper,checkpointer,display]
@@ -73,6 +74,7 @@ def run_training(
 def _parse_args(default_output_path, args_arr = None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--crop-stride',required =True,type=int)
+    parser.add_argument('--patience',default=5,type=int)
     parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc'])
     parser.add_argument('--train-data',required=True)
 
@@ -112,5 +114,6 @@ if __name__ == "__main__":
         crop_stride=args.crop_stride,
         filter_small=args.filter_small,
         loss=args.loss,
-        test_imgs = test_imgs
+        test_imgs = test_imgs,
+        patience=args.patience
     )
