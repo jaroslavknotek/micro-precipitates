@@ -9,6 +9,8 @@ import sys
 import logging
 from datetime import datetime
 
+import numpy as np
+
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
 
@@ -30,7 +32,16 @@ def _norm(img):
     img_max = np.max(img)
     return (img.astype(float)-img_min) / (img_max-img_min)
 
-def run_training(train_data,dump_output=None,crop_stride = 8):
+def run_training(
+    train_data,
+    dump_output=None,
+    crop_stride = 8,
+    filter_small = False ):
+
+    logger.debug(f"Data: {train_data}")
+    logger.debug(f"Data: {dump_output}")
+    logger.debug(f"Data: {crop_stride}")
+    logger.debug(f"Filter small: {filter_small}")
     
     training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
     
@@ -43,7 +54,7 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
 
     test_img1 = precipitate.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
     test_img2 = precipitate.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
-    test_imgs = [_norm(img) for img in [test_img1,test_img2]]
+    test_imgs = [(img) for img in [test_img1,test_img2]]
 
     model = nn.compose_unet(CROP_SHAPE)
     model_path = pathlib.Path(dump_output/'model.h5')
@@ -53,7 +64,11 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
     display = DisplayCallback(dump_output, model, test_imgs)
     callbacks = [earlystopper,checkpointer,display]
     logger.info("Reading Dataset")
-    train_ds,val_ds,spe = ds.prepare_datasets(train_data,crop_stride=crop_stride)
+    train_ds,val_ds,spe = ds.prepare_datasets(
+        train_data,
+        crop_stride=crop_stride,
+        filter_small=filter_small
+    )
     logger.info("Started Training")
     logger.debug(f"Expected steps per epoch:{spe}")
 
@@ -66,4 +81,8 @@ def run_training(train_data,dump_output=None,crop_stride = 8):
 
 if __name__ == "__main__":
     train_data = pathlib.Path( sys.argv[1])
-    run_training(train_data,crop_stride=24)
+    run_training(
+        train_data,
+        crop_stride=24,
+        filter_small=True
+    )
