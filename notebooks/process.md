@@ -23,9 +23,10 @@ jupyter:
 
 ```python
 import pathlib
-models_tmp = list(pathlib.Path('tmp').rglob("*.h5"))
-models_dir = list(pathlib.Path('model').rglob("*.h5"))
-all_models = models_tmp + models_dir
+# models_tmp = list(pathlib.Path('tmp').rglob("*.h5"))
+# models_dir = list(pathlib.Path('model').rglob("*.h5"))
+# all_models = models_tmp + models_dir
+all_models = list(pathlib.Path('/home/jry/test-models/').rglob("*.h5"))
 ```
 
 ```python
@@ -45,45 +46,11 @@ for img_path in test_data_dirs:
 ```
 
 ```python
-
-        
-```
-
-```python
 import precipitates.img_tools as it
 import numpy as n
 
 def _pair_grains(*params):
     return it._pair_grains(*params)
-
-# def compare(predicted,label,include_df = False):
-#     df =  _pair_grains(predicted,label)
-    
-#     grains_pred = df['pred_id'].max()
-#     grains_label = df['label_id'].max()
-
-#     # todo check that pairs are not twice
-#     tp = len(df[ ~df['label_id'].isna() & ~df['pred_id'].isna()])
-#     fp = len(df[ df['label_id'].isna() & ~df['pred_id'].isna()])
-#     fn = len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-#     tn = 0 #len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-
-#     precision = np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_pred
-    
-#     recall =  np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_label
-    
-    
-#     if not include_df:
-#         return precision,recall
-#     return precision,recall,df
-
-
-# _,mask,pred = img_rows[0]
-
-# print(compare(pred,mask))
-# plt.imshow(mask)
-# plt.show()
-# plt.imshow(pred)
 ```
 
 ```python
@@ -193,24 +160,6 @@ def _calculate_metrics(pred,label,clusters = [0,50,500,1024**2]):
 ```
 
 ```python
-# df =  _pair_grains(pred,mask)
-# df['pred_area_px'] = [ np.sum(x) for x in df.pred_mask]
-# df['label_area_px'] = [ np.sum(x) for x in df.label_mask]
-# df['intersection'] = [ _intersection(a,b) for a,b in zip(df.label_mask,df.pred_mask)]
-# df['union'] = [ _union(a,b) for a,b in zip(df.label_mask,df.pred_mask)]
-# df['iou' ] = df['intersection']/df['union']
-# clusters = [0,50,500,1024**2]
-# df['size_category'] = [ _category(row,clusters) for row in df.itertuples()]
-# plt.hist(df['label_area_px'],bins=100)
-# plt.hist(df['pred_area_px'],bins=100)
-# plt.show()
-# plt.hist(df['size_category'],bins=5)
-# metrics_res = _calculate_metrics(pred,mask)
-# print(json.dumps(metrics_res,indent=True))
-    
-```
-
-```python
 import precipitates.nn as nn
 from tqdm.auto import tqdm
 import numpy as np
@@ -223,10 +172,10 @@ def _norm(img):
     img_max = np.max(img)
     return (img.astype(float)-img_min) / (img_max-img_min)
 
-def _get_metrics_with_img():
+def _get_metrics_with_img(models):
     results = []
     
-    for model_path in tqdm(all_models):
+    for model_path in tqdm(models):
         model = nn.compose_unet((128,128))
         model.load_weights(model_path)
 
@@ -243,7 +192,7 @@ def _get_metrics_with_img():
         
     return results
 
-results = _get_metrics_with_img()
+results = _get_metrics_with_img(all_models)
 ```
 
 ```python
@@ -255,7 +204,7 @@ for ax_r,row,model_path in zip(axs,results,mods):
     f1 = metrics_res[-1]['f1']
     iou = metrics_res[-1]['iou']
     
-    title = f"{model_path.stem} - f1:{f1},iou:{iou}"
+    title = f"{model_path.parent}-{model_path.stem} - f1:{f1},iou:{iou}"
     ax_r[1].set_title(title)
     for ax,img in zip(ax_r,row[:-1]):
         ax.imshow(img)
@@ -270,8 +219,82 @@ for ax_r,row,model_path in zip(axs,results,mods):
 ```
 
 ```python
-assert False
+# Test filter small
+%ls
 ```
+
+```python
+import pathlib
+import imageio
+import sys
+sys.path.insert(0,'..')
+
+import precipitates.dataset
+import matplotlib.pyplot as plt
+
+def _print_filtered(filter_small = False):
+    data_dir = list(pathlib.Path('data/20230427/labeled/').rglob("mask.png"))
+
+    crops = precipitates.dataset.get_crops_iterator(
+        [data_dir[0]],
+        stride=128,
+        filter_small=filter_small
+    )
+    
+    _,axs = plt.subplots(8,8,figsize=(10,10))
+    for ax,img in zip(axs.flatten(), crops):
+        ax.imshow(img)    
+    plt.show()
+    
+
+_print_filtered()
+_print_filtered(filter_small=True)
+#precipitates.img_tools
+```
+
+```python
+import precipitates.nn as nn
+
+from precipitates.dataset import img2crops
+
+def dwbce(true,pred):
+    dwbce = nn.DynamicallyWeightedBinaryCrossentropy()
+    return dwbce(true, pred).numpy()
+
+def bce(true,pred):
+    bce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    return bce(true, pred).numpy()
+
+def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
+    
+    mask_crop_sets_it = img2crops(mask.astype(np.float32),stride, shape)
+    pred_crop_sets_it = img2crops(pred.astype(np.float32),stride, shape)
+
+    return zip(mask_crop_sets_it,pred_crop_sets_it)
+
+
+
+def _exp_see_crops(mask,pred):
+    
+    cols = 8
+    zz = list(_zip_pred_label_crops(mask,pred,stride = 64))
+    _,axs = plt.subplots(len(zz)//cols, cols,figsize = (16,len(zz)//4 * 1.2))
+    axs = axs.reshape((-1,2)) 
+    
+    for (axl,axr), (m,p) in zip(axs,zz):
+        axl.imshow(m)
+        axr.imshow(p)
+        dwbc = dwbce(m,p)
+        bc = bce(p,p)
+        title = f"BC: {bc:.3f}, DBWC: {dwbc:.3f}"
+        axl.set_title(title)
+    plt.show()
+
+_exp_see_crops(results[0][1],results[0][2])
+plt.show()
+```
+
+# OLDF stuff
 
 ```python
 import pathlib
@@ -291,38 +314,4 @@ not_labeled = [ path for name,path in all_paths_w_names if name not in labeled_n
 for f in not_labeled:
     
     shutil.copy(f,data_dir/'not_labeled'/f.name)
-```
-
-```python
-import sys
-sys.path.insert(0,'../python')
-
-import nn
-import pathlib
-```
-
-```python
-model_path = pathlib.Path('/home/jry/source/jaroslavknotek/micro-precipitates/tmp/20230415/model.h5')
-model = nn.compose_unet(128,128,3)
-model.load_weights(model_path)
-```
-
-```python
-import imageio
-import precipitates
-import matplotlib.pyplot as plt
-
-test_data_dirs = list( pathlib.Path('../data/test').glob('*'))
-
-import tensorflow as tf
-
-test_dir = test_data_dirs[0]
-#for test_dir in test_data_dirs:
-img = precipitates.load_microscope_img(test_dir/'img.png')
-mask = imageio.imread(test_dir/'mask.png')
-assert img.shape == (1024,1024)
-
-_,axs = plt.subplots(1,2)
-axs[0].imshow(img)
-predicted = nn.predict(model,img)
 ```
