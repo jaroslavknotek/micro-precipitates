@@ -37,8 +37,8 @@ np.random.seed = seed
 class WeightedBinaryCrossentropy(tf.keras.losses.Loss):
     def __init__(self,weight_zero = 1, weight_one = 1):
         super().__init__()
-        self.weight_zero = weight_zero
-        self.weight_one = weight_one
+        self.weight_zero = float(weight_zero)
+        self.weight_one = float(weight_one)
     
     def call(self, true, pred):
         """
