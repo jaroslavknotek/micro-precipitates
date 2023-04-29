@@ -101,7 +101,7 @@ def run_training(
     results = model.fit(
         train_ds,
         validation_data= val_ds,
-        epochs=50,
+        epochs=100,
         callbacks=callbacks
     )
 
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     
     output_dir= pathlib.Path(args.output)
     output_dir.mkdir(exist_ok=True,parents=True)
-    logger.debug("output:",output_dir)
+    logger.debug("output: {output_dir}")
     
     
     with open(output_dir/"params.txt",'w') as f:
