@@ -5,28 +5,53 @@ import imageio
 import nn
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import precipitates.precipitate as precipitate
+import precipitates.evaluation as evaluation
 import sys
 import logging
 from datetime import datetime
 import argparse
 import numpy as np
 import json
+import matplotlib.pyplot as plt
 
 logging.basicConfig()
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
 
 class DisplayCallback(tf.keras.callbacks.Callback):
-    def __init__(self,dump_output,model,test_imgs):
+    
+    def __init__(self,dump_output,model,test_img_mask_pair,filter_small=False):
         self.dump_output= dump_output
         self.model = model
-        self.test_imgs=test_imgs
+        self.test_img_mask_pair = test_img_mask_pair
+        self.filter_small = filter_small
 
     def on_epoch_end(self, epoch, logs=None):
-        for i,img in enumerate(self.test_imgs):
-            pred = nn.predict(self.model,img)
+        for i,(img,mask) in enumerate(self.test_img_mask_pair):
             path = self.dump_output/f'test_{i}_{epoch:03}.png'
-            imageio.imwrite(path, pred)
+            json_path = self.dump_output/f'test_{i}_{epoch:03}.json'
+            
+            (img,ground_truth,pred,metrics_res) = evaluation.evaluate(
+                self.model,
+                img,
+                mask,
+                self.filter_small
+            )
+            
+            fig,axs = plt.subplots(1,4,figsize=(16,4))
+            evaluation._visualize_pairs(
+                axs,
+                img,
+                mask,
+                pred,
+                metrics_res,
+                "model"
+            )
+            plt.savefig(path)
+            json.dump(metrics_res,open(json_path,'w'))
+            logger.info(f"Epoch {epoch} img:{i}: {json.dumps(metrics_res,indent=4)}")
+            
+            
 
                 
 def _norm(img):
@@ -37,8 +62,7 @@ def _norm(img):
 def run_training(
     train_data,
     args,
-    dump_output=None,
-    test_imgs=[]
+    dump_output
 ):
     CROP_SHAPE= (128,128)
 
@@ -53,8 +77,18 @@ def run_training(
 
     earlystopper = EarlyStopping(patience=args.patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
-    display = DisplayCallback(dump_output, model, test_imgs)
-    callbacks = [earlystopper,checkpointer,display]
+    
+    callbacks = [earlystopper,checkpointer]
+    if args.test_dir is not None:
+        test_img_mask_pairs=evaluation._read_test_imgs_mask_pairs(args.test_dir)
+        display = DisplayCallback(
+            dump_output,
+            model, 
+            test_img_mask_pairs,
+            args.filter_small
+        )
+        callbacks.append(display)
+        
     logger.info("Reading Dataset")
     train_ds,val_ds,spe = ds.prepare_datasets(
         train_data,
@@ -91,7 +125,7 @@ def _parse_args(args_arr = None):
         default=True,
         action=argparse.BooleanOptionalAction
     )
-    parser.add_argument('--test-imgs',nargs='*',default=[])
+    parser.add_argument('--test-dir',required=False)
 
     return parser.parse_args(args_arr)
 
@@ -113,16 +147,10 @@ if __name__ == "__main__":
 
     train_data = pathlib.Path(args.train_data)
     
-    test_imgs = list(map(precipitate.load_microscope_img, args.test_imgs))
-    # HACK
-    if test_imgs == []:
-        test_img1 = precipitate.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
-        test_img2 = precipitate.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
-        test_imgs = [_norm(img) for img in [test_img1,test_img2]]
-
+    
+    
     run_training(
         train_data,
         args,
-        dump_output = output_dir,
-        test_imgs = test_imgs
+        output_dir
     )
