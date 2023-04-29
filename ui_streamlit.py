@@ -8,6 +8,7 @@ from PIL import Image
 import logging
 import cv2
 
+
 ACCEPTED_TYPES =[
     'png', 
     'jpg',
@@ -17,7 +18,6 @@ ACCEPTED_TYPES =[
 ]
 
 model_path = "model.h5"
-
 
 @st.cache_data
 def predict(model_path,img):
@@ -63,9 +63,6 @@ def _process_image(img,pred,px2um=None):
     }
 
 uploaded_file = st.file_uploader("Upload Image",type=ACCEPTED_TYPES)
-
-
-
 
 if uploaded_file is not None: 
     st.write("Input Image")
