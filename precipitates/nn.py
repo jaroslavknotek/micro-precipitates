@@ -197,23 +197,6 @@ def compose_unet(
         run_eagerly = True)
     return model
 
-def _train_model(model,X_train,y_train,model_path,validation_split = .2):
-    earlystopper = EarlyStopping(patience=5, verbose=1)
-    checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
-    results = model.fit(
-        X_train, 
-        y_train, 
-        validation_split=validation_split, 
-        batch_size=16, 
-        epochs=50,
-        callbacks=[earlystopper, checkpointer]
-    )
-    
-def train(img_size,channels,model_path, X_train, y_train):
-    model = compose_unet(img_size,img_size,channels)
-    _train_model(model, X_train,y_train, str(model_path))
-    return load_model(model_path)
-
 def load_model(model_path):
     return keras.models.load_model(str(model_path))
     
