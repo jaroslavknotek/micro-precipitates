@@ -32,9 +32,7 @@ def _get_ellipse(features):
         lw=2,
         alpha = .5
     )
-
-
-    
+ 
 def _show_precipitate_detail(ax,features,img):
     
     radius = features.circle_radius + 2
@@ -88,8 +86,10 @@ def _plot_shape_bar(ax,df):
     ax.set_xlabel("Shapes")
     
 def plot_histograms(df_features,bins=20):
-    
-    areas = df_features.precipitate_area_um.to_numpy()
+    if 'precipitate_area_um' in df_features.columns: 
+        areas = df_features.precipitate_area_um.to_numpy()
+    else: 
+        areas = df_features.precipitate_area_px.to_numpy()
     
     fig,axs = plt.subplots(2,1)
     
