@@ -57,13 +57,12 @@ def prepare_datasets(
     steps_per_epoch = train_size//batch_size 
     train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
     val_ds = dataset.skip(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-    
  
     logger.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
     
     #hack force this to cache
-    for _ in val_ds:
-        pass
+    print(len([_ for _ in val_ds]))
+    print(len([_ for _ in val_ds]))
 
     return train_ds,val_ds,steps_per_epoch
 

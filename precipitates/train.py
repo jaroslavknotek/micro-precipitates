@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 import argparse
 import numpy as np
+import json
+
 logging.basicConfig()
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
@@ -34,32 +36,30 @@ def _norm(img):
 
 def run_training(
     train_data,
+    args,
     dump_output=None,
-    crop_stride = 8,
-    filter_small = False,
-    loss='bc',
-    test_imgs=[],
-    patience = 5):
-
-    logger.debug(f"Data: {train_data}")
-    logger.debug(f"Data: {dump_output}")
-    logger.debug(f"Data: {crop_stride}")
-    logger.debug(f"Filter small: {filter_small}")
-
+    test_imgs=[]
+):
     CROP_SHAPE= (128,128)
 
-    model = nn.compose_unet(CROP_SHAPE,loss=loss)
+    model = nn.compose_unet(
+        CROP_SHAPE,
+        loss=args.loss,
+        weight_zero = args.wbc_weight_zero,
+        weight_one = args.wbc_weight_one
+    )
+    
     model_path = pathlib.Path(dump_output/'model.h5')
 
-    earlystopper = EarlyStopping(patience=patience, verbose=1)
+    earlystopper = EarlyStopping(patience=args.patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     display = DisplayCallback(dump_output, model, test_imgs)
     callbacks = [earlystopper,checkpointer,display]
     logger.info("Reading Dataset")
     train_ds,val_ds,spe = ds.prepare_datasets(
         train_data,
-        crop_stride=crop_stride,
-        filter_small=filter_small
+        crop_stride=args.crop_stride,
+        filter_small=args.filter_small
     )
     logger.info("Started Training")
     logger.debug(f"Expected steps per epoch:{spe}")
@@ -71,14 +71,21 @@ def run_training(
         callbacks=callbacks
     )
 
-def _parse_args(default_output_path, args_arr = None):
+def _parse_args(args_arr = None):
+    training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    
+    default_output_path =pathlib.Path("/tmp/")/training_timestamp
     parser = argparse.ArgumentParser()
     parser.add_argument('--crop-stride',required =True,type=int)
     parser.add_argument('--patience',default=5,type=int)
-    parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc'])
+    
+    parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc','wbc'])
     parser.add_argument('--train-data',required=True)
+    
+    parser.add_argument('--wbc-weight-zero',required=False,default =1)
+    parser.add_argument('--wbc-weight-one',required=False,default=1)
 
-    parser.add_argument('--output',required=False,default=def_output)
+    parser.add_argument('--output',required=False,default=default_output_path)
     parser.add_argument(
         '--filter-small',
         default=True,
@@ -90,14 +97,19 @@ def _parse_args(default_output_path, args_arr = None):
 
 if __name__ == "__main__": 
     
-    training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
-
-    def_output =pathlib.Path("/tmp/")/training_timestamp
-    args = _parse_args(def_output)
-
+    
+    args = _parse_args()
+    
+    
     output_dir= pathlib.Path(args.output)
-    logger.debug("output:",output_dir)
     output_dir.mkdir(exist_ok=True,parents=True)
+    logger.debug("output:",output_dir)
+    
+    
+    with open(output_dir/"params.txt",'w') as f:
+        json.dump(args.__dict__, f, indent=4)
+        logging.debug(f"Args: {args.__dict__}")
+        
 
     train_data = pathlib.Path(args.train_data)
     
@@ -106,14 +118,11 @@ if __name__ == "__main__":
     if test_imgs == []:
         test_img1 = precipitate.load_microscope_img("../data/test/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09_JR/img.png")
         test_img2 = precipitate.load_microscope_img('../data/20230415/not_labeled/DELISA LTO_08Ch18N10T-podelny rez-nulty stav_BSE_01_TiC,N_03_224px10um.tif')
-        test_imgs = [(img) for img in [test_img1,test_img2]]
+        test_imgs = [_norm(img) for img in [test_img1,test_img2]]
 
     run_training(
         train_data,
+        args,
         dump_output = output_dir,
-        crop_stride=args.crop_stride,
-        filter_small=args.filter_small,
-        loss=args.loss,
-        test_imgs = test_imgs,
-        patience=args.patience
+        test_imgs = test_imgs
     )
