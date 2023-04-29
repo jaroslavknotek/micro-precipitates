@@ -130,7 +130,7 @@ def compose_unet(
     elif loss == 'dwbc':
         loss = DynamicallyWeightedBinaryCrossentropy()
     elif loss == 'wbc':
-        loss = DynamicallyWeightedBinaryCrossentropy(weight_zero,weight_one)
+        loss = WeightedBinaryCrossentropy(weight_zero,weight_one)
     else:
         raise Exception(f"Unrecognized loss {loss}")
     

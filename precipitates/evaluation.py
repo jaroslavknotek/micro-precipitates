@@ -33,7 +33,7 @@ def _intersection(a,b):
     if a is None or b is None:
         return np.nan
     else:
-        return a*b
+        return np.sum((a*b)>0)
     
 def _union(a,b):
     assert a is not None or b is not None
@@ -43,7 +43,7 @@ def _union(a,b):
     if b is None:
         b = np.zeros(a.shape)
     
-    return np.sum(a+b>=1)
+    return np.sum((a+b)>0)
 
 def _category(row,clusters):
     
@@ -79,8 +79,8 @@ def _iou(label,pred):
     return m.result().numpy()
 
 def _iou_from_arr(label_arr,pred_arr):
-    pred_mask = _merge(label_arr)
-    label_mask = _merge(pred_arr)
+    pred_mask = _merge(pred_arr)
+    label_mask = _merge(label_arr)
     if pred_mask.shape != label_mask.shape or len(label_mask) !=2:
         return np.nan
     return _iou(label_mask,pred_mask)
