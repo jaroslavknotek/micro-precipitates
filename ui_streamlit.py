@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from PIL import Image
 import logging
-
+import cv2
 
 ACCEPTED_TYPES =[
     'png', 
@@ -16,9 +16,10 @@ ACCEPTED_TYPES =[
     'tiff'
 ]
 
-model_path = "model/model-20230417-morp_opening.h5"
+model_path = "model.h5"
 
 
+@st.cache_data
 def predict(model_path,img):
     img_cropped = img[:img.shape[1]]
     img = img_cropped.astype(float)/np.max(img_cropped)
@@ -30,6 +31,7 @@ def load_model(model_path):
     model.load_weights(model_path)
     return model
 
+@st.cache_data
 def _get_feature_dataset(shapes):
     features = [precipitate.extract_features(shape) for shape in shapes]
     shape_classes = [ precipitate.classify_shape(feature) for feature in features]
@@ -38,6 +40,7 @@ def _get_feature_dataset(shapes):
     df['shape_class'] = shape_classes
     return df
 
+@st.cache_data
 def _process_image(img,pred,px2um=None):
     contoured =visualization.add_contours_morph(img,pred,contour_width=2)
    
@@ -61,10 +64,15 @@ def _process_image(img,pred,px2um=None):
 
 uploaded_file = st.file_uploader("Upload Image",type=ACCEPTED_TYPES)
 
+
+
+
 if uploaded_file is not None: 
     st.write("Input Image")
     u_img = Image.open(uploaded_file,formats=None)
     img = np.array(u_img) 
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
     img_f = img.astype(float) / np.max(img) 
     show = st.image(img_f)
    
@@ -82,7 +90,7 @@ if uploaded_file is not None:
         st.write("Distribution")
         st.download_button(
               label="Download data as CSV",
-              data=res['df'].to_csv().encode('utf-8'),
+              data=res['df'].to_csv(header=True,index=False).encode('utf-8'),
               file_name='distribution.csv',
               mime='text/csv',
         )

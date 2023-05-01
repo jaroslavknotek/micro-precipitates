@@ -20,7 +20,6 @@ setup(name='MicroPrec',
         'tensorflow==2.12',
         'matplotlib',
         'pandas',
-        'pillow',
         'streamlit'
     ]
 )
