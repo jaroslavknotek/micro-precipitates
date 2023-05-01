@@ -20,11 +20,11 @@ logger.setLevel(logging.DEBUG)
 
 class DisplayCallback(tf.keras.callbacks.Callback):
     
-    def __init__(self,dump_output,model,test_img_mask_pair,filter_small=False):
+    def __init__(self,dump_output,model,test_img_mask_pair,filter_size=0):
         self.dump_output= dump_output
         self.model = model
         self.test_img_mask_pair = test_img_mask_pair
-        self.filter_small = filter_small
+        self.filter_size = filter_size
 
     def on_epoch_end(self, epoch, logs=None):
         for i,(img,mask) in enumerate(self.test_img_mask_pair):
@@ -35,7 +35,7 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                 self.model,
                 img,
                 mask,
-                self.filter_small
+                self.filter_size
             )
             
             fig,axs = plt.subplots(1,4,figsize=(16,4))
@@ -85,7 +85,7 @@ def run_training(
             dump_output,
             model, 
             test_img_mask_pairs,
-            args.filter_small
+            args.filter_size
         )
         callbacks.append(display)
         
@@ -93,7 +93,7 @@ def run_training(
     train_ds,val_ds,spe = ds.prepare_datasets(
         train_data,
         crop_stride=args.crop_stride,
-        filter_small=args.filter_small
+        filter_size=args.filter_size
     )
     logger.info("Started Training")
     logger.debug(f"Expected steps per epoch:{spe}")
@@ -120,11 +120,7 @@ def _parse_args(args_arr = None):
     parser.add_argument('--wbc-weight-one',required=False,default=1)
 
     parser.add_argument('--output',required=False,default=default_output_path)
-    parser.add_argument(
-        '--filter-small',
-        default=True,
-        action=argparse.BooleanOptionalAction
-    )
+    parser.add_argument('--filter-size',default=0,type=int)
     parser.add_argument('--test-dir',required=False)
 
     return parser.parse_args(args_arr)
@@ -137,7 +133,7 @@ if __name__ == "__main__":
     
     output_dir= pathlib.Path(args.output)
     output_dir.mkdir(exist_ok=True,parents=True)
-    logger.debug("output: {output_dir}")
+    logger.debug(f"output: {output_dir}")
     
     
     with open(output_dir/"params.txt",'w') as f:
