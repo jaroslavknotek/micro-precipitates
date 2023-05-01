@@ -105,13 +105,13 @@ def _pair_grains(predicted,label,cap = 500):
     p_n, p_grains = cv2.connectedComponents(predicted)
     l_n, l_grains = cv2.connectedComponents(label)
     
+    
     if cap is not None:
         p_n = min(cap,p_n)
         p_grains [p_grains >cap] = 0
         
         l_n = min(cap,l_n)
         l_grains [l_grains >cap] = 0
-    
     
     pairs = []
     for p_grain_id in range(1,p_n):
@@ -158,7 +158,6 @@ def compare(predicted,label,include_df = False):
     
     recall =  np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_label
     
-    
     if not include_df:
         return precision,recall
     return precision,recall,df
@@ -167,7 +166,8 @@ def _print_confusion_matrix(conmat):
     df_cm = pd.DataFrame(conmat, index = ["D","ND"],columns=["D","ND"])
     sn.heatmap(df_cm, annot=True,fmt = 'd') # font size
     
-def _filter_small(img,size=(4,4)):
+def _filter_small(img,filter_size=4):
+    size = (filter_size,filter_size)
     kernel = np.zeros(size,dtype=np.uint8)
     kernel[1:3,:]=1
     kernel[:,1:3]=1

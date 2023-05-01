@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 import imageio
 from dataclasses import dataclass
-
+import logging
+logger = logging.getLogger("prec")
 
 @dataclass
 class PrecipitateFeatures:
@@ -35,12 +36,18 @@ def load_microscope_img(path):
         img = cv2.cvtColor(img,cv2.COLOR_RGB2GRAY)
     elif len(img.shape) == 3 and img.shape[2] == 4:
         img = cv2.cvtColor(img,cv2.COLOR_RGBA2GRAY)
+    elif len(img.shape) == 3 and img.shape[2] == 2:
+        logger.warning(f"Stripping down alpha for image {path}")
+        img = img[:,:,0]
+    elif len(img.shape) ==2:
+        pass
+    assert len(img.shape) == 2,f"IMG is not 2d but {len(img.shape)}"
         
     width = img.shape[1]
     # ensure square
     cropped = img[:width,:]
     norm = cropped.astype(float)/np.max(cropped)*255
-
+    
     return norm.astype(np.uint8)
     
 def identify_precipitates_from_mask(prec_mask):

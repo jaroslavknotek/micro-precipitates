@@ -25,10 +25,6 @@ import numpy as np
 import pathlib
 from tqdm.auto import tqdm
 
-
-def _pair_grains(*params):
-    return it._pair_grains(*params)
-
 def _intersection(a,b):
     if a is None or b is None:
         return np.nan
@@ -56,17 +52,12 @@ def _category(row,clusters):
     assert False
 
 def prec_rec(df):
-    grains_pred = df['pred_id'].max()
-    grains_label = df['label_id'].max()
-
-    # todo check that pairs are not twice
-    tp = len(df[ ~df['label_id'].isna() & ~df['pred_id'].isna()])
-    fp = len(df[ df['label_id'].isna() & ~df['pred_id'].isna()])
-    fn = len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-    tn = 0 #len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-
-    precision = np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_pred
-    recall =  np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_label
+    grains_pred = len(df[~df['pred_id'].isna()])
+    grains_label = len(df[~df['label_id'].isna()])
+    
+    tp = df[~df['label_id'].isna() & ~df['pred_id'].isna()]
+    precision = len(tp) / grains_pred
+    recall =  len(tp) / grains_label
     return precision,recall
 
 def _merge(masks):
@@ -81,15 +72,17 @@ def _iou(label,pred):
 def _iou_from_arr(label_arr,pred_arr):
     pred_mask = _merge(pred_arr)
     label_mask = _merge(label_arr)
-    if pred_mask.shape != label_mask.shape or len(label_mask) !=2:
+    if pred_mask.shape != label_mask.shape or len(label_mask.shape) !=2:
         return np.nan
     return _iou(label_mask,pred_mask)
 
 def _f1(precision, recall):
+    if precision + recall ==0:
+        return np.nan
     return 2*(precision * recall)/(precision + recall)
 
 def _calculate_metrics(pred,label,clusters = [0,50,500,1024**2]):
-    df =  _pair_grains(pred,label)
+    df =  it._pair_grains(pred,label)
     
     df['pred_area_px'] = [ np.sum(x) for x in df.pred_mask]
     df['label_area_px'] = [ np.sum(x) for x in df.label_mask]
@@ -141,11 +134,12 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
     return zip(mask_crop_sets_it,pred_crop_sets_it)
 
 
-def evaluate(model, img, ground_truth,filter_small):
+def evaluate(model, img, ground_truth,filter_size):
     img = _norm(img)
     pred = nn.predict(model,img)    
-    if filter_small:
-        pred = it._filter_small(pred)
+    if filter_size >= 0:
+        pred = it._filter_small(pred,filter_size=filter_size)
+        ground_truth = it._filter_small(pred,filter_size=filter_size)
         
     metrics_res = _calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)
@@ -166,7 +160,8 @@ def _read_test_imgs_mask_pairs(test_dir):
 def evaluate_models(
     models_paths,
     test_imgs_folder,
-    filter_small = False):
+    filter_size =0
+):
     
     test_img_mask_pairs=_read_test_imgs_mask_pairs(test_imgs_folder)
     results = []
@@ -179,7 +174,7 @@ def evaluate_models(
                 model,
                 img,
                 mask,
-                filter_small
+                filter_size
             )
             
             results.append({
