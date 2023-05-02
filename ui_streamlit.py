@@ -81,23 +81,23 @@ if uploaded_file is not None:
         st.write("Segmentation Mask")
         st.image(prediction,clamp=True)
        
-    with st.spinner("Processin Mask"):
-        res = _process_image(img_f,prediction)
+   #  with st.spinner("Processin Mask"):
+   #      res = _process_image(img_f,prediction)
 
-    with st.spinner("Drawing results"):
-        st.write("Contours:")
-        st.image(res['contoured'],clamp=True)
-        st.write("Distribution")
-        st.download_button(
-              label="Download data as CSV",
-              data=res['df'].to_csv(header=True,index=False).encode('utf-8'),
-              file_name='distribution.csv',
-              mime='text/csv',
-        )
-        st.write(res['df'])
-        st.write("Histogram")
-        st.pyplot(res['fig_hist'])
-        st.write("Details")
-        st.pyplot(res['fig_details'])
+   #  with st.spinner("Drawing results"):
+   #      st.write("Contours:")
+   #      st.image(res['contoured'],clamp=True)
+   #      st.write("Distribution")
+   #      st.download_button(
+   #            label="Download data as CSV",
+   #            data=res['df'].to_csv(header=True,index=False).encode('utf-8'),
+   #            file_name='distribution.csv',
+   #            mime='text/csv',
+   #      )
+   #      st.write(res['df'])
+   #      st.write("Histogram")
+   #      st.pyplot(res['fig_hist'])
+   #      st.write("Details")
+   #      st.pyplot(res['fig_details'])
 
-        st.success('Done')
+   #      st.success('Done')

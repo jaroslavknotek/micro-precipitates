@@ -1,11 +1,10 @@
-FROM python:3.9
+FROM hdgigante/python-opencv
 COPY . /app
 WORKDIR /app/
 
-RUN ./scripts/setup_container.sh
-# RUN pip install -r requirements.txt
-RUN pip install --no-cache-dir .
-EXPOSE 8080
+RUN python3 -m ensurepip
+RUN pip3 install --no-cache-dir -r requirements.txt
+EXPOSE 80
 
-CMD python -m streamlit run --server.port 8080 ui_streamlit.py
+CMD python3 -m streamlit run --server.port 80 ui_streamlit.py
 
