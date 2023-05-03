@@ -105,12 +105,12 @@ def run_training(
     callbacks = [earlystopper,checkpointer,display]
 
     logging.info("Reading Dataset")
-    train_ds,val_ds,spe = ds.prepare_datasets(
+    train_ds,val_ds = ds.prepare_datasets(
         train_data,
         crop_stride=args.crop_stride,
         filter_size = args.filter_size
     )
-    logging.debug("Expected steps per epoch:", spe)
+    
     results = model.fit(
         train_ds,
         validation_data= val_ds,

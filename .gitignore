@@ -139,3 +139,4 @@ tmp
 /tmp
 .cache*
 wandb
+models
