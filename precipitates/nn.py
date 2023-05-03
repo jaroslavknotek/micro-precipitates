@@ -122,8 +122,6 @@ def predict(model, img, img_size=128, prediction_threshold = .5):
 
 def resolve_loss(
     loss='bc',
-    weight_zero=1,
-    weight_one=1
 ):
     if loss =='bc':
         return tf.keras.losses.BinaryCrossentropy()
@@ -223,15 +221,11 @@ def build_unet(
 
 def compose_unet(
     crop_shape,
-    loss='bc',
-    weight_zero=1,
-    weight_one=1
+    loss='bc'
 ):
     logging.warning("Deprecated. Use build unet fn")
     loss = resolve_loss(
-        loss,
-        weight_zero=weight_zero,
-        weight_one=weight_one
+        loss
     )
     return build_unet(
         crop_shape,

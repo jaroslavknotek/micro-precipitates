@@ -131,8 +131,6 @@ if __name__ == "__main__":
 
     train_data = pathlib.Path(args.train_data)
     
-    
-    
     run_training(
         train_data,
         args,
