@@ -138,3 +138,4 @@ tmp
 /model
 /tmp
 .cache*
+wandb

@@ -37,11 +37,11 @@ def prepare_datasets(
         filter_size = filter_size)
     
     cache_path= pathlib.Path('.')
-    for f in cache_path.rglob('.cache*'):
-        try:
-            os.remove(f)
-        except Exception as e :
-            logger.warn(f"deleting cache: {e}")
+    # for f in cache_path.rglob('.cache*'):
+    #     try:
+    #         os.remove(f)
+    #     except Exception as e :
+    #         logger.warn(f"deleting cache: {e}")
 
     augument = _get_augumentation(seed=seed)
     dataset = (dataset

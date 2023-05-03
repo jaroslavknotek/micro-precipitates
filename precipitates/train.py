@@ -2,10 +2,11 @@ import precipitates.dataset as ds
 import tensorflow as tf
 import pathlib
 import imageio
-import nn
+import precipitates.nn
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import precipitates.precipitate as precipitate
 import precipitates.evaluation as evaluation
+import precipitates.nn as nn
 
 import sys
 import logging
@@ -14,6 +15,9 @@ import argparse
 import numpy as np
 import json
 import matplotlib.pyplot as plt
+
+
+import wandb
 
 logging.basicConfig()
 logger = logging.getLogger("prec")
@@ -49,8 +53,22 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                 "model"
             )
             plt.savefig(path)
-            json.dump(metrics_res,open(json_path,'w'))
+            #json.dump(metrics_res,open(json_path,'w'))
             logger.info(f"Epoch {epoch} img:{i}: {json.dumps(metrics_res,indent=4)}")
+            
+            print("LOGS keys", list(logs.keys()))
+            logged = {
+                'epoch': epoch, 
+                'image_id':i,
+                # 'train_acc': train_acc,
+                # 'train_loss': train_loss, 
+                # 'val_acc': val_acc, 
+                'val_loss': logs.get("loss"),
+            }
+            logged.update(metrics_res[-1])
+            wandb.log(logged)
+            
+            
 def _norm(img):
 
     img_min=np.min(img)
@@ -63,6 +81,7 @@ def run_training(
     dump_output
 ):    
     training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    test_dir = pathlib.Path("../data/test/IN")
     
     if dump_output is None:
         dump_output =pathlib.Path("../tmp/")/training_timestamp
@@ -71,23 +90,26 @@ def run_training(
 
     CROP_SHAPE= (128,128)
 
-    model = nn.compose_unet(
+    loss = nn.resolve_loss(args.loss)
+    model = nn.build_unet(
         CROP_SHAPE,
-        loss=args.loss,
-        weight_zero = args.wbc_weight_zero,
-        weight_one = args.wbc_weight_one
+        loss=loss
     )
-    
-
-    model = nn.compose_unet(CROP_SHAPE)
     model_path = pathlib.Path(dump_output/'model.h5')
-
+    
     earlystopper = EarlyStopping(patience=5, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
-    display = DisplayCallback(dump_output, model, test_imgs)
+    
+    test_img_mask_pairs = evaluation._read_test_imgs_mask_pairs(test_dir)
+    display = DisplayCallback(dump_output, model, test_img_mask_pairs,args.filter_size)
     callbacks = [earlystopper,checkpointer,display]
 
-    train_ds,val_ds,spe = ds.prepare_datasets(train_data,crop_stride=crop_stride)
+    logging.info("Reading Dataset")
+    train_ds,val_ds,spe = ds.prepare_datasets(
+        train_data,
+        crop_stride=args.crop_stride,
+        filter_size = args.filter_size
+    )
     logging.debug("Expected steps per epoch:", spe)
     results = model.fit(
         train_ds,
@@ -131,8 +153,11 @@ if __name__ == "__main__":
 
     train_data = pathlib.Path(args.train_data)
     
-    run_training(
-        train_data,
-        args,
-        output_dir
-    )
+    try:
+        run_training(
+            train_data,
+            args,
+            output_dir
+        )
+    except Exception:
+        traceback.print_exc()

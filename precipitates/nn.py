@@ -19,6 +19,8 @@ from keras.layers import concatenate
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras import backend as K
 
+
+
 import keras.models
 import tensorflow as tf
 
@@ -127,7 +129,8 @@ def resolve_loss(
         return tf.keras.losses.BinaryCrossentropy()
     elif loss == 'dwbc':
         return DynamicallyWeightedBinaryCrossentropy()
-    elif loss == 'wbc':
+    elif loss.startswith('wbc'):
+        weight_zero,weight_one = [int(x) for x in loss.split('-')[1:]]
         return WeightedBinaryCrossentropy(weight_zero,weight_one)
     else:
         raise Exception(f"Unrecognized loss {loss}")
@@ -164,7 +167,7 @@ def up_block(
 
 def build_unet(
     crop_shape,
-    loss = 'bc',
+    loss,
     start_filters = 16,
     depth = 4,
     activation = 'elu',

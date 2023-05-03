@@ -1,4 +1,4 @@
-numpy
+n1umpy
 # opencv-python
 tqdm
 imageio
@@ -9,3 +9,4 @@ matplotlib
 pandas
 streamlit
 pillow
+wandb
