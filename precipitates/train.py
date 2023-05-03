@@ -25,22 +25,23 @@ logger.setLevel(logging.DEBUG)
 
 class DisplayCallback(tf.keras.callbacks.Callback):
     
-    def __init__(self,dump_output,model,test_img_mask_pair,filter_size=0):
+    def __init__(self,dump_output,model,test_img_mask_pair,args):
         self.dump_output= dump_output
         self.model = model
         self.test_img_mask_pair = test_img_mask_pair
-        self.filter_size = filter_size
+        self.args = args
 
     def on_epoch_end(self, epoch, logs=None):
         for i,(img,mask) in enumerate(self.test_img_mask_pair):
-            path = self.dump_output/f'test_{i}_{epoch:03}.png'
-            json_path = self.dump_output/f'test_{i}_{epoch:03}.json'
+#             path = self.dump_output/f'test_{i}_{epoch:03}.png'
+#             json_path = self.dump_output/f'test_{i}_{epoch:03}.json'
             
             (img,ground_truth,pred,metrics_res) = evaluation.evaluate(
                 self.model,
                 img,
                 mask,
-                self.filter_size
+                self.args.filter_size,
+                self.args.crop_size
             )
             
             fig,axs = plt.subplots(1,4,figsize=(16,4))
@@ -52,20 +53,24 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                 metrics_res,
                 "model"
             )
-            plt.savefig(path)
+            #plt.savefig(path)
             #json.dump(metrics_res,open(json_path,'w'))
-            logger.info(f"Epoch {epoch} img:{i}: {json.dumps(metrics_res,indent=4)}")
             
-            print("LOGS keys", list(logs.keys()))
+            
             logged = {
                 'epoch': epoch, 
                 'image_id':i,
                 # 'train_acc': train_acc,
                 # 'train_loss': train_loss, 
                 # 'val_acc': val_acc, 
-                'val_loss': logs.get("loss"),
+                'train_loss':logs.get("loss"),
+                'train_iou':logs.get("io_u"),
+                'val_loss': logs.get("val_loss"),
+                'val_iou': logs.get("val_io_u"),
+                
             }
             logged.update(metrics_res[-1])
+            logger.info(f"Epoch {epoch} img:{i}: {json.dumps(logged,indent=4)}")
             wandb.log(logged)
             
             
@@ -78,39 +83,44 @@ def _norm(img):
 def run_training(
     train_data,
     args,
-    dump_output
-):    
-    training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    model_path
+):   
+    dump_output = None
+        
     test_dir = pathlib.Path("../data/test/IN")
     
-    if dump_output is None:
-        dump_output =pathlib.Path("../tmp/")/training_timestamp
-        dump_output.mkdir(exist_ok=True,parents=True)
-    logging.debug("output:",dump_output)
+#     if dump_output is None:
+#         dump_output =pathlib.Path("../tmp/")/training_timestamp
+#         dump_output.mkdir(exist_ok=True,parents=True)
+    
+#     logging.debug("output:",dump_output)
 
-    CROP_SHAPE= (128,128)
+    crop_shape= (args.crop_size,args.crop_size)
 
     loss = nn.resolve_loss(args.loss)
     model = nn.build_unet(
-        CROP_SHAPE,
+        crop_shape,
         loss=loss,
         activation = args.cnn_activation,
-        fitlers = args.cnn_filters,
+        start_filters = args.cnn_filters,
         depth = args.cnn_depth
     )
-    model_path = pathlib.Path(dump_output/'model.h5')
     
-    earlystopper = EarlyStopping(patience=5, verbose=1)
+    logger.debug(f"Will checkpiont model to {model_path}")
+    #model_path = pathlib.Path(dump_output/model_name)
+    
+    earlystopper = EarlyStopping(patience=args.patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     
     test_img_mask_pairs = evaluation._read_test_imgs_mask_pairs(test_dir)
-    display = DisplayCallback(dump_output, model, test_img_mask_pairs,args.filter_size)
+    display = DisplayCallback(dump_output, model, test_img_mask_pairs,args)
     callbacks = [earlystopper,checkpointer,display]
 
     logging.info("Reading Dataset")
     train_ds,val_ds = ds.prepare_datasets(
         train_data,
         crop_stride=args.crop_stride,
+        crop_shape = crop_shape,
         filter_size = args.filter_size
     )
     

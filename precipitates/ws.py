@@ -14,31 +14,31 @@ logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
 
 sweep_configuration = {
-    'method': 'random',
+#    'method': 'random',
+    'method':'grid',
     'name': 'sweep',
-    'metric': {'goal': 'maximize', 'name': 'val_acc'},
+    'metric': {'goal': 'maximize', 'name': 'val_iou'},
     'parameters': 
     {
-        'crop_stride':{'values': [256]},
-        'patience':{'values': [1]},
+        'crop_stride':{'values': [32]},
+        'patience':{'values': [5]},
+        # 'crop_stride':{'values': [256]},
+        # 'patience':{'values': [0]},
         'loss':{'values': ['dwbc','bc','wbc-1-2','wbc-2-1']},
-        #'filter_size':{'values': [5,7,9,11,13]},
-        'filter_size':{'values': [9]},
+        'filter_size':{'values': [0, 5, 9, 13]},
         'cnn_filters':{'values': [8,16,32]},
         'cnn_depth':{'values': [4,5,6]},
-        'cnn_activation':{'values': ['elu','relu']}
+        'cnn_activation':{'values': ['elu','relu']},
+        'crop_size':{'values': [64,128]}
      }
 }
 
-# Initialize sweep by passing in config. 
-# (Optional) Provide a name of the project.
 sweep_id = wandb.sweep(
     sweep=sweep_configuration, 
     project='my-prec-sweep-small'
 )
 
 def run():    
-    
     train_data = "../data/20230427/labeled/"
     train_data = pathlib.Path(train_data)
     
@@ -46,18 +46,23 @@ def run():
     
     run = wandb.init(
         project='my-prec-sweep-small',
-        dir="/tmp",
+        dir="../tmp/wandb_dir",
         entity='knotek',
         save_code = False,
     )
     
     args = wandb.config
+    
+    ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    model_suffix = '_'.join([ f"{k}-{args[k]}" for k in sweep_configuration['parameters']])
+    model_path = pathlib.Path(f"../tmp/{ts}_{train_data.parent.name}_{model_suffix}.h5")
+    
     #ts = datetime.strftime(datetime.now(),"%Y%m%d%H%M%S")
     #output_dir= pathlib.Path(f"../tmp/{ts}")
-    output_dir= pathlib.Path(f"../tmp")
+    #output_dir= pathlib.Path(f"../tmp")
     #output_dir= pathlib.Path(args.output)
-    output_dir.mkdir(exist_ok=True,parents=True)
-    logger.debug(f"output: {output_dir}")
+    #output_dir.mkdir(exist_ok=True,parents=True)
+    #logger.debug(f"output: {output_dir}")
     
 #     with open(output_dir/"params.txt",'w') as f:
 #         json.dump(args.__dict__, f, indent=4)
@@ -66,34 +71,11 @@ def run():
         precipitates.train.run_training(
             train_data,
             args,
-            output_dir
+            model_path
         )
     except Exception:
         traceback.print_exc()
     
-
-# def main():
-#     run = wandb.init()
-
-#     TODO train data
-#     # note that we define values from `wandb.config`  
-#     # instead of defining hard values
-#     lr  =  wandb.config.lr
-#     bs = wandb.config.batch_size
-#     epochs = wandb.config.epochs
-
-#     for epoch in np.arange(1, epochs):
-#         train_acc, train_loss = train_one_epoch(epoch, lr, bs)
-#         val_acc, val_loss = evaluate_one_epoch(epoch)
-
-#         wandb.log({
-#             'epoch': epoch, 
-#             'train_acc': train_acc,
-#             'train_loss': train_loss, 
-#             'val_acc': val_acc, 
-#             'val_loss': val_loss
-#         })
-
 # Start sweep job.
-wandb.agent(sweep_id, function=run,count=30)
+wandb.agent(sweep_id, function=run)
 wandb.finish()
