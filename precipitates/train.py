@@ -93,7 +93,10 @@ def run_training(
     loss = nn.resolve_loss(args.loss)
     model = nn.build_unet(
         CROP_SHAPE,
-        loss=loss
+        loss=loss,
+        activation = args.cnn_activation,
+        fitlers = args.cnn_filters,
+        depth = args.cnn_depth
     )
     model_path = pathlib.Path(dump_output/'model.h5')
     

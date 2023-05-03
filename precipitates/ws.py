@@ -24,6 +24,9 @@ sweep_configuration = {
         'loss':{'values': ['dwbc','bc','wbc-1-2','wbc-2-1']},
         #'filter_size':{'values': [5,7,9,11,13]},
         'filter_size':{'values': [9]},
+        'cnn_filters':{'values': [8,16,32]},
+        'cnn_depth':{'values': [4,5,6]},
+        'cnn_activation':{'values': ['elu','relu']}
      }
 }
 
