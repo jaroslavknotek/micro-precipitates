@@ -118,6 +118,105 @@ def predict(model, img, img_size=128, prediction_threshold = .5):
     preds_mask  =_decut_mask(preds_test,square_size)
     return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
+# def compose_unet_dyn(
+#     crop_shape,
+#     loss='bc',
+#     weight_zero=1,
+#     weight_one=1
+# ):
+#     assert len(crop_shape) ==2
+
+#     if loss =='bc':
+#         loss = tf.keras.losses.BinaryCrossentropy()
+#     elif loss == 'dwbc':
+#         loss = DynamicallyWeightedBinaryCrossentropy()
+#     elif loss == 'wbc':
+#         loss = WeightedBinaryCrossentropy(weight_zero,weight_one)
+#     else:
+#         raise Exception(f"Unrecognized loss {loss}")
+    
+#     # Build U-Net model
+#     inputs = Input((crop_shape[0],crop_shape[1],3))
+        
+#     filter_shape = (3,3)
+#     depth = 4
+#     start_filters = 16
+#     activation = 'elu'
+#     dropout = .2
+    
+#     filters = start_filters
+#     prev_layer = inputs
+#     for _ in range(depth):
+#         conv = Conv2D(
+#             filters, 
+#             filter_shape, 
+#             activation=activation, 
+#             kernel_initializer='he_normal', 
+#             padding='same') (prev_layer)
+        
+#         cd = Dropout(dropout) (conv)
+        
+#         conv_o = Conv2D(
+#             filters, 
+#             filter_shape, 
+#             activation=activation, 
+#             kernel_initializer='he_normal', 
+#             padding='same') (cd)
+        
+#         prev_layer = MaxPooling2D((2, 2)) (conv_o)
+#         filters *=2
+        
+#     middle_layer = Conv2D(
+#         filters, 
+#         filter_shape, 
+#         activation=activation, 
+#         kernel_initializer='he_normal', 
+#         padding='same') (p4)
+#     middle_layer = Dropout(dropout) (middle_layer)
+#     prev_layer = Conv2D(
+#         filters, 
+#         filter_shape, 
+#         activation='elu', 
+#         kernel_initializer='he_normal', 
+#         padding='same') (middle_layer)
+    
+#     for _ in range(depth):
+#         filters = filters//2
+
+#         u6 = Conv2DTranspose(128, (2, 2), strides=(2, 2), padding='same') (c5)
+#         u6 = concatenate([u6, c4])
+#         c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u6)
+#         c6 = Dropout(0.2) (c6)
+#         c6 = Conv2D(128, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c6)
+
+#     u7 = Conv2DTranspose(64, (2, 2), strides=(2, 2), padding='same') (c6)
+#     u7 = concatenate([u7, c3])
+#     c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u7)
+#     c7 = Dropout(0.2) (c7)
+#     c7 = Conv2D(64, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c7)
+
+#     u8 = Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same') (c7)
+#     u8 = concatenate([u8, c2])
+#     c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u8)
+#     c8 = Dropout(0.1) (c8)
+#     c8 = Conv2D(32, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c8)
+
+#     u9 = Conv2DTranspose(16, (2, 2), strides=(2, 2), padding='same') (c8)
+#     u9 = concatenate([u9, c1], axis=3)
+#     c9 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (u9)
+#     c9 = Dropout(0.1) (c9)
+#     c9 = Conv2D(16, (3, 3), activation='elu', kernel_initializer='he_normal', padding='same') (c9)
+
+#     outputs = Conv2D(1, (1, 1), activation='sigmoid') (c9)
+
+#     model = Model(inputs=[inputs], outputs=[outputs])
+#     model.compile(
+#         optimizer='adam', 
+#         loss=loss,
+#         metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])],
+#         run_eagerly = True)
+#     return model
+
 def compose_unet(
     crop_shape,
     loss='bc',
