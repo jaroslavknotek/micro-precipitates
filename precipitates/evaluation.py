@@ -56,8 +56,15 @@ def prec_rec(df):
     grains_label = len(df[~df['label_id'].isna()])
     
     tp = df[~df['label_id'].isna() & ~df['pred_id'].isna()]
-    precision = len(tp) / grains_pred
-    recall =  len(tp) / grains_label
+    if grains_pred !=0:
+        precision = len(tp) / grains_pred
+    else: 
+        precision = np.nan
+        
+    if grains_label != 0:
+        recall =  len(tp) / grains_label
+    else:
+        recall = np.nan
     return precision,recall
 
 def _merge(masks):
