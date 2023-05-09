@@ -27,33 +27,30 @@ def predict(model_path,img):
     return nn.predict(model,img_cropped)
 
 def load_model(model_path):
-    model = nn.compose_unet((128,128))
+    model = nn.build_unet((128,128))
     model.load_weights(model_path)
     return model
-
-@st.cache_data
-def _get_feature_dataset(shapes):
-    features = [precipitate.extract_features(shape) for shape in shapes]
-    shape_classes = [ precipitate.classify_shape(feature) for feature in features]
-    
-    df = pd.DataFrame(features)
-    df['shape_class'] = shape_classes
-    return df
 
 @st.cache_data
 def _process_image(img,pred,px2um=None):
     contoured =visualization.add_contours_morph(img,pred,contour_width=2)
    
     shapes = precipitate.identify_precipitates_from_mask(pred)
-    df_features = _get_feature_dataset(shapes)
 
+    features = [precipitate.extract_features(shape) for shape in shapes]
+    shape_classes = [ precipitate.classify_shape(feature) for feature in features]
+    
+    df_features = pd.DataFrame(features)
+    df_features['shape_class'] = shape_classes
     if px2um is not None:
         _add_micrometer_scale(df_features,px2um)
     else:
         logging.warning(f"No scale given")
 
     fig_hist = visualization.plot_histograms(df_features)
-    fig_details = visualization.plot_precipitate_details(df_features,pred,img)
+    # Consumes too much memory - turned off
+    #fig_details = visualization.plot_precipitate_details(df_features,pred,img)
+    fig_details = None
     return {
         "pred":pred,
         "contoured":contoured,
@@ -78,23 +75,23 @@ if uploaded_file is not None:
         st.write("Segmentation Mask")
         st.image(prediction,clamp=True)
        
-   #  with st.spinner("Processin Mask"):
-   #      res = _process_image(img_f,prediction)
+    with st.spinner("Processin Mask"):
+        res = _process_image(img_f,prediction)
 
-   #  with st.spinner("Drawing results"):
-   #      st.write("Contours:")
-   #      st.image(res['contoured'],clamp=True)
-   #      st.write("Distribution")
-   #      st.download_button(
-   #            label="Download data as CSV",
-   #            data=res['df'].to_csv(header=True,index=False).encode('utf-8'),
-   #            file_name='distribution.csv',
-   #            mime='text/csv',
-   #      )
-   #      st.write(res['df'])
-   #      st.write("Histogram")
-   #      st.pyplot(res['fig_hist'])
-   #      st.write("Details")
-   #      st.pyplot(res['fig_details'])
+    with st.spinner("Drawing results"):
+        st.write("Contours:")
+        st.image(res['contoured'],clamp=True)
+        st.write("Distribution")
+        st.download_button(
+              label="Download data as CSV",
+              data=res['df'].to_csv(header=True,index=False).encode('utf-8'),
+              file_name='distribution.csv',
+              mime='text/csv',
+        )
+        st.write(res['df'])
+        st.write("Histogram")
+        st.pyplot(res['fig_hist'])
+        #st.write("Details")
+        #st.pyplot(res['fig_details'])
 
-   #      st.success('Done')
+        st.success('Done')

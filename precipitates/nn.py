@@ -167,7 +167,7 @@ def up_block(
 
 def build_unet(
     crop_shape,
-    loss,
+    loss = None,
     start_filters = 16,
     depth = 4,
     activation = 'elu',
@@ -175,7 +175,8 @@ def build_unet(
     kernel_initializer = 'he_normal'
 ):
     assert len(crop_shape) ==2
-    
+    if loss is None:
+        loss = resolve_loss('bc')
     # Build U-Net model
     inputs = Input((crop_shape[0],crop_shape[1],3))
     

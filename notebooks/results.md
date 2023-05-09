@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.4
+      jupytext_version: 1.14.5
   kernelspec:
-    display_name: palivo_general
+    display_name: palivo
     language: python
-    name: palivo_general
+    name: palivo
 ---
 
 ```python
@@ -18,14 +18,10 @@ jupyter:
 ```
 
 ```python
-import os
-os.environ['CUDA_VISIBLE_DEVICES']="1"
-```
-
-```python
 import pathlib
 import pandas as pd
 import json
+from tqdm.auto import tqdm
 
 def _read_line_file(file):
     res = json.load(open(file))
@@ -106,6 +102,8 @@ def _construct_weight_map(weights_dict):
 ```
 
 ```python
+import tensorflow as tf
+
 def _collect_pairing_weights(p_n, p_grains,l_n, l_grains):
     weights_dict = {}
     iou_metric = tf.keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)
@@ -127,7 +125,7 @@ def _collect_pairing_weights(p_n, p_grains,l_n, l_grains):
 
 ```python
 import cv2
-import tensorflow as tf
+
 import scipy.optimize
 
 def _pair_using_linear_sum_assignment(p_n, p_grains,l_n, l_grains, cap=500):
@@ -182,6 +180,7 @@ def match_precipitates(prediction,label):
 ```python
 import sys
 sys.path.insert(0,'..')
+
 import precipitates.evaluation as ev
 import precipitates.nn as nn
 import precipitates.img_tools as it
@@ -261,4 +260,30 @@ plt.imshow(best_row.pred)
 plt.show()
 
 _visualize_results(df_top_ten)
+```
+
+```python
+import matplotlib.pyplot as plt
+import imageio
+import pathlib
+
+test_mask_paths =list(pathlib.Path("../data/test/").glob("*IN/mask.png"))
+test_mask = imageio.imread(test_mask_paths[0])
+plt.imshow(test_mask)
+```
+
+```python
+import sys
+sys.path.insert(0,'..')
+import precipitates.img_tools as img_tools
+import precipitates.precipitate as precipitate
+bbs = img_tools.extract_component_with_bounding_boxes(test_mask)
+
+shapes = precipitate.identify_precipitates_from_mask(test_mask)
+features = [precipitate.extract_features(shape) for shape in shapes]
+shape_classes = [ precipitate.classify_shape(feature) for feature in features]
+
+df_features = pd.DataFrame(features)
+df_features['shape_class'] = shape_classes
+df_features
 ```

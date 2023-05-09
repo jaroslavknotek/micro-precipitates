@@ -86,7 +86,7 @@ def _extract_component(component_mask,component_id):
 def extract_component_with_bounding_boxes(binary_img):
     n_found, cmp_mask = cv2.connectedComponents(binary_img)
     components = (_extract_component(cmp_mask,i) for i in range(1,n_found))
-    bbs = [(get_bounding_box(c),c) for c in components]
+    bbs = ((get_bounding_box(c),c) for c in components)
     return [ ((t,b,l,r),c[t:b,l:r]) for (t,b,l,r),c in bbs]
 
 
