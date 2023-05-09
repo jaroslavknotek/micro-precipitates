@@ -24,11 +24,12 @@ sweep_configuration = {
         'patience':{'values': [5]},
         # 'crop_stride':{'values': [256]},
         # 'patience':{'values': [0]},
-        'loss':{'values': ['dwbc','bc','wbc-1-2','wbc-2-1']},
-        'filter_size':{'values': [0, 5, 9, 13]},
-        'cnn_filters':{'values': [8,16,32]},
-        'cnn_depth':{'values': [4,5,6]},
-        'cnn_activation':{'values': ['elu','relu']},
+        'loss':{'values': ['bc','wbc-1-2','wbc-2-1']}, # dwbc removed
+        'filter_size':{'values': [0, 9]},
+        'cnn_filters':{'values': [8,16]},
+        'cnn_depth':{'values': [4]},
+        #'cnn_activation':{'values': ['elu','relu']},
+        'cnn_activation':{'values': ['relu']},
         'crop_size':{'values': [64,128]}
      }
 }
