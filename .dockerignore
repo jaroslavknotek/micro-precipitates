@@ -1,5 +1,5 @@
-# Git
 .git
+# Git
 .gitignore
 
 # CI
@@ -98,6 +98,8 @@ model
 tmp
 notebooks
 docs
-.dvc
 */.ipynb_checkpoints
 */.cache*
+.cache*
+*.ipynb
+.env

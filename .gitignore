@@ -140,3 +140,4 @@ tmp
 .cache*
 wandb
 models
+.env

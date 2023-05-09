@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 import logging
 import cv2
-
+import artifact_storage
 
 ACCEPTED_TYPES =[
     'png', 
@@ -18,6 +18,7 @@ ACCEPTED_TYPES =[
 ]
 
 model_path = "model.h5"
+model_input_size = (128,128)
 
 @st.cache_data
 def predict(model_path,img):
@@ -27,7 +28,7 @@ def predict(model_path,img):
     return nn.predict(model,img_cropped)
 
 def load_model(model_path):
-    model = nn.build_unet((128,128))
+    model = nn.build_unet(model_input_size)
     model.load_weights(model_path)
     return model
 
@@ -77,6 +78,19 @@ if uploaded_file is not None:
        
     with st.spinner("Processin Mask"):
         res = _process_image(img_f,prediction)
+
+    with st.spinner("Synchronizing"):
+        meta = {
+            "model":model_path,
+            "input_size":model_input_size
+        }
+        artifact_storage.upload_artifacts(
+            img,
+            res['pred'],
+            res['df'],
+            meta
+        )
+
 
     with st.spinner("Drawing results"):
         st.write("Contours:")

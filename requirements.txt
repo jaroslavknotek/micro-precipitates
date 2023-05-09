@@ -1,4 +1,4 @@
-n1umpy
+numpy
 # opencv-python
 tqdm
 imageio
@@ -10,3 +10,4 @@ pandas
 streamlit
 pillow
 wandb
+azure-storage-blob
