@@ -141,26 +141,6 @@ def _pair_grains(predicted,label,cap = 500):
         pairs.append((None,fn,None,l_grain_mask))
     return pd.DataFrame(pairs,columns = ['pred_id','label_id','pred_mask','label_mask'])    
 
-
-def compare(predicted,label,include_df = False):
-    df =  _pair_grains(predicted,label)
-    
-    grains_pred = df['pred_id'].max()
-    grains_label = df['label_id'].max()
-
-    # todo check that pairs are not twice
-    tp = len(df[ ~df['label_id'].isna() & ~df['pred_id'].isna()])
-    fp = len(df[ df['label_id'].isna() & ~df['pred_id'].isna()])
-    fn = len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-    tn = 0 #len(df[ ~df['label_id'].isna() & df['pred_id'].isna()])
-
-    precision = np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_pred
-    
-    recall =  np.sum(~df['label_id'].isna() & ~df['pred_id'].isna()) / grains_label
-    
-    if not include_df:
-        return precision,recall
-    return precision,recall,df
     
 def _print_confusion_matrix(conmat):
     df_cm = pd.DataFrame(conmat, index = ["D","ND"],columns=["D","ND"])
@@ -168,7 +148,5 @@ def _print_confusion_matrix(conmat):
     
 def _filter_small(img,filter_size=4):
     size = (filter_size,filter_size)
-    kernel = np.zeros(size,dtype=np.uint8)
-    kernel[1:3,:]=1
-    kernel[:,1:3]=1
+    kernel = np.ones(size,dtype=np.uint8)
     return cv2.morphologyEx(img,cv2.MORPH_OPEN,kernel)

@@ -101,17 +101,20 @@ class DynamicallyWeightedBinaryCrossentropy(tf.keras.losses.Loss):
         return keras.backend.mean(weighted_bin_crossentropy)
     
 
-def predict(model, img, img_size=128, prediction_threshold = .5):
+def predict(model, img, prediction_threshold = .5):
+    
+    _,crop_size,_,_ = model.inputs[0].shape
+    
     if np.max(img) > 1:
         logger.warning(f"Predicted img has values beyond 1. normalize to 0-1")
     
-    test_data_2d = _cut_to_pieces(img,img_size)
+    test_data_2d = _cut_to_pieces(img,crop_size)
     square_size = test_data_2d.shape[0] 
     test_data = np.array(
         list(
             map(
                 _ensure_three_chanels, 
-                test_data_2d.reshape((-1,img_size,img_size))
+                test_data_2d.reshape((-1,crop_size,crop_size))
             )
         )
     )
@@ -129,6 +132,10 @@ def resolve_loss(
         return tf.keras.losses.BinaryCrossentropy()
     elif loss == 'dwbc':
         return DynamicallyWeightedBinaryCrossentropy()
+    elif loss == 'bfl':
+        return tf.keras.losses.BinaryFocalCrossentropy(
+            apply_class_balancing=False
+        )
     elif loss.startswith('wbc'):
         weight_zero,weight_one = [int(x) for x in loss.split('-')[1:]]
         return WeightedBinaryCrossentropy(weight_zero,weight_one)

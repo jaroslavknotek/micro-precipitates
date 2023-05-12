@@ -19,7 +19,9 @@ def prepare_datasets(
     batch_size = 32,
     seed = 123,
     validation_split_factor = .2,
-    filter_size = 0):
+    filter_size = 0,
+    cache_file_name='.cache',
+    generator=True):
     
     
     img_paths = list(train_data_root.rglob("img.png"))
@@ -33,11 +35,11 @@ def prepare_datasets(
         mask_paths,
         crop_stride=crop_stride,
         crop_shape=crop_shape ,
-        generator=True,
+        generator=generator,
         filter_size = filter_size)
     
     cache_path= pathlib.Path('.')
-    for f in cache_path.rglob('.cache*'):
+    for f in cache_path.rglob('{cache_file_name}*'):
         try:
             os.remove(f)
         except Exception as e :
@@ -46,7 +48,7 @@ def prepare_datasets(
     augument = _get_augumentation(seed=seed)
     dataset = (dataset
                .shuffle(batch_size,seed=seed)
-               .cache('.cache')
+               .cache(cache_file_name)
     )
     
     logger.debug(f"Found examples: {len([None for _ in dataset])}")

@@ -1,17 +1,52 @@
 import wandb
 import precipitates.train
+import precipitates.dataset as ds
 from datetime import datetime
 import pathlib
 
+import argparse
 import logging 
 
 import sys
 import traceback
 
-
 logging.basicConfig()
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
+
+
+
+def run_w_data():    
+
+    run = wandb.init(
+        #project='my-prec-sweep-small',
+        dir="../tmp/",
+        entity='knotek',
+        save_code = False,
+    )
+    
+    args = wandb.config
+    ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
+    model_suffix = '-'.join([ f"{k}={args[k]}" for k in sweep_configuration['parameters']])
+    model_path = pathlib.Path(f"../tmp/{ts}_{train_data.parent.name}_{model_suffix}.h5")
+       
+    try:
+        precipitates.train.run_training_w_dataset(
+            train_ds,
+            val_ds,
+            args,
+            model_path
+        )
+    except Exception:
+        traceback.print_exc()
+        
+        
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--crop-size',required =True,type=int)
+parser.add_argument('--filter-size',required =True,type=int)
+cli_args = parser.parse_args()
+crop_size = cli_args.crop_size
 
 sweep_configuration = {
 #    'method': 'random',
@@ -24,59 +59,43 @@ sweep_configuration = {
         'patience':{'values': [5]},
         # 'crop_stride':{'values': [256]},
         # 'patience':{'values': [0]},
-        'loss':{'values': ['bc','wbc-1-2','wbc-2-1']}, # dwbc removed
-        'filter_size':{'values': [0, 9]},
-        'cnn_filters':{'values': [8,16]},
-        'cnn_depth':{'values': [4]},
-        #'cnn_activation':{'values': ['elu','relu']},
-        'cnn_activation':{'values': ['relu']},
-        'crop_size':{'values': [64,128]}
+        #'loss':{'values': ['bc','wbc-1-2','wbc-2-1','wbc-5-1','bfl']}, # 'dwbc', 'wbc-1-2' removed
+        'loss':{'values': ['bc','bfl']}, # 'dwbc', 'wbc-1-2' removed
+        'filter_size':{'values': [cli_args.filter_size]},
+        'cnn_filters':{'values': [8,16,32]},
+        'cnn_depth':{'values': [2,3,4]},
+        'cnn_activation':{'values': ['elu','relu']},
+        'crop_size':{'values': [crop_size]}
      }
 }
 
 sweep_id = wandb.sweep(
     sweep=sweep_configuration, 
-    project='my-prec-sweep-small'
+    project='precipitates'
 )
 
-def run():    
-    train_data = "../data/20230427/labeled/"
-    train_data = pathlib.Path(train_data)
-    
-    #train_data = pathlib.Path(args.train_data)
-    
-    run = wandb.init(
-        project='my-prec-sweep-small',
-        dir="../tmp/wandb_dir",
-        entity='knotek',
-        save_code = False,
-    )
-    
-    args = wandb.config
-    
-    ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
-    model_suffix = '_'.join([ f"{k}-{args[k]}" for k in sweep_configuration['parameters']])
-    model_path = pathlib.Path(f"../tmp/{ts}_{train_data.parent.name}_{model_suffix}.h5")
-    
-    #ts = datetime.strftime(datetime.now(),"%Y%m%d%H%M%S")
-    #output_dir= pathlib.Path(f"../tmp/{ts}")
-    #output_dir= pathlib.Path(f"../tmp")
-    #output_dir= pathlib.Path(args.output)
-    #output_dir.mkdir(exist_ok=True,parents=True)
-    #logger.debug(f"output: {output_dir}")
-    
-#     with open(output_dir/"params.txt",'w') as f:
-#         json.dump(args.__dict__, f, indent=4)
-#         logging.debug(f"Args: {args.__dict__}")    
-    try:
-        precipitates.train.run_training(
-            train_data,
-            args,
-            model_path
-        )
-    except Exception:
-        traceback.print_exc()
     
 # Start sweep job.
-wandb.agent(sweep_id, function=run)
+
+logging.info("Preparing Dataset")
+
+
+fixed_config = {
+    "crop_stride":32,
+    "crop_shape":(crop_size,crop_size),
+    "filter_size":0
+}
+
+train_data = "../data/20230427/labeled/"
+train_data = pathlib.Path(train_data)
+train_ds,val_ds = ds.prepare_datasets(
+    train_data,
+    crop_stride=fixed_config['crop_stride'],
+    crop_shape = fixed_config['crop_shape'],
+    filter_size = cli_args.filter_size,
+    cache_file_name=f'.cache-{crop_size}',
+    generator=False
+)
+
+wandb.agent(sweep_id, function=run_w_data)
 wandb.finish()

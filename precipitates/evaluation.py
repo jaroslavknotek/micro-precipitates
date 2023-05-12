@@ -24,6 +24,97 @@ from tqdm.auto import tqdm
 import numpy as np
 import pathlib
 from tqdm.auto import tqdm
+import cv2
+
+import scipy.optimize
+
+import pandas as pd
+
+def _construct_weight_map(weights_dict):
+    # Remap arbitrary indices to integers
+    p_map= {}
+
+    for i,v in enumerate(weights_dict.keys()):
+        p_map[v]=i
+
+    l_keys = itertools.chain(
+                *(list(k for k in v.keys()) for v in weights_dict.values())
+            )
+    l_unique = np.unique(list(l_keys))
+    l_map={}
+    for i,v in enumerate(l_unique):
+        l_map[v]=i
+        
+    weights = np.zeros((len(p_map),len(l_map)))
+    for i,(p,pv) in enumerate(weights_dict.items()):
+        for l,lv in pv.items():
+            weights[p_map[p],l_map[l]] = lv
+    return weights,p_map,l_map
+    
+def _collect_pairing_weights(p_n, p_grains,l_n, l_grains):
+    weights_dict = {}
+    iou_metric = tf.keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)
+    for p_grain_id in range(1,p_n):
+        p_grain_mask = it._extract_grain_mask(p_grains,p_grain_id)
+
+        intersecting_ids = np.unique(l_grains*p_grain_mask)
+        intersecting_ids = intersecting_ids[intersecting_ids>0]
+        
+        for l_grain_id in intersecting_ids:
+            l_grain_mask = it._extract_grain_mask(l_grains,l_grain_id)
+            iou_metric.update_state(l_grain_mask,p_grain_mask)
+            weight = 1 - iou_metric.result().numpy()
+            weights_dict.setdefault(p_grain_id,{}).setdefault(l_grain_id,weight)
+            iou_metric.reset_state()
+    return weights_dict
+
+def _pair_using_linear_sum_assignment(p_n, p_grains,l_n, l_grains, cap=500):
+    
+    if cap is not None:
+        p_n = min(cap,p_n)
+        p_grains[p_grains >cap] = 0
+        
+        l_n = min(cap,l_n)
+        l_grains[l_grains >cap] = 0
+        
+    weights_dict = _collect_pairing_weights(p_n, p_grains,l_n, l_grains)
+    weights,p_map,l_map = _construct_weight_map(weights_dict)
+    p_item_id,l_item_id = scipy.optimize.linear_sum_assignment(weights)
+    
+    inverse_p_map = { v:k for k,v in p_map.items()}
+    p_item = np.array([inverse_p_map[idx] for idx in p_item_id])
+    inverse_l_map = { v:k for k,v in l_map.items()}
+    l_item = np.array([inverse_l_map[idx] for idx in l_item_id])
+    return p_item,l_item
+    
+    
+def match_precipitates(prediction,label):
+    p_n, p_grains = cv2.connectedComponents(prediction)
+    l_n, l_grains = cv2.connectedComponents(label)    
+    
+    # pairs only #TP
+    pred_items,label_items = _pair_using_linear_sum_assignment(
+        p_n, 
+        p_grains,
+        l_n, 
+        l_grains
+    )
+    data = list(zip(pred_items,label_items))
+    
+    #FP
+    p_set = set(pred_items)
+    false_positives = [ i for i in range(1,p_n) if i not in p_set]
+    for i in false_positives:
+        data.append((i,None))
+    
+    #FN
+    l_set = set(label_items)
+    label_positives = [i for i in range(1,l_n) if i not in l_set]
+    for i in label_positives:
+        data.append((None,i))
+    df = pd.DataFrame(data,columns = ['pred_id','label_id'])
+    return df, p_grains, l_grains
+
 
 def _intersection(a,b):
     if a is None or b is None:
@@ -46,26 +137,10 @@ def _category(row,clusters):
     vals = [x for x in [row.label_area_px,row.pred_area_px] if x is not None]
     assert len(vals) >0
     min_size = np.nanmin(vals)
-    for a,b in itertools.pairwise(clusters):
+    for a,b in zip(clusters,clusters[1:]):
         if a<=min_size<b:
             return clusters.index(a)
     assert False
-
-def prec_rec(df):
-    grains_pred = len(df[~df['pred_id'].isna()])
-    grains_label = len(df[~df['label_id'].isna()])
-    
-    tp = df[~df['label_id'].isna() & ~df['pred_id'].isna()]
-    if grains_pred !=0:
-        precision = len(tp) / grains_pred
-    else: 
-        precision = np.nan
-        
-    if grains_label != 0:
-        recall =  len(tp) / grains_label
-    else:
-        recall = np.nan
-    return precision,recall
 
 def _merge(masks):
     masks = [mask for mask in masks if mask is not None]
@@ -89,10 +164,10 @@ def _f1(precision, recall):
     return 2*(precision * recall)/(precision + recall)
 
 def _calculate_metrics(pred,label,clusters = [0,50,500,1024**2]):
-    df =  it._pair_grains(pred,label)
+    df,p_precs,l_precs =  match_precipitates(pred,label)
     
-    df['pred_area_px'] = [ np.sum(x) for x in df.pred_mask]
-    df['label_area_px'] = [ np.sum(x) for x in df.label_mask]
+    df['pred_area_px'] = [np.sum(p_precs==pred_id) for pred_id in df.pred_id]
+    df['label_area_px'] = [np.sum(l_precs==label_id) for label_id in df.label_id]
     df['size_category'] = [ _category(row,clusters) for row in df.itertuples()]
     
     cat_size = {u:df[df.size_category == u] for u in df.size_category.unique()}
@@ -100,19 +175,36 @@ def _calculate_metrics(pred,label,clusters = [0,50,500,1024**2]):
     
     metrics = {}
     for u,sc_df in cat_size.items():
-        iou =_iou_from_arr(
-            sc_df.pred_mask.to_numpy(),
-            sc_df.label_mask.to_numpy()
-        )
-        p,r = prec_rec(sc_df)
+        # iou =_iou_from_arr(
+        #     sc_df.pred_mask.to_numpy(),
+        #     sc_df.label_mask.to_numpy()
+        # )
+        p,r = _prec_rec(sc_df)
         metrics[int(u)] = {
-            "iou":float(iou),
+            #"iou":float(iou),
+            "iou":-1,#disabled
             "precision":float(p),
             "recall":float(r),
             "f1":float(_f1(p,r))
         }
     
     return metrics
+
+def _prec_rec(df):
+    grains_pred = len(df[~df['pred_id'].isna()])
+    grains_label = len(df[~df['label_id'].isna()])
+    
+    tp = df[~df['label_id'].isna() & ~df['pred_id'].isna()]
+    if grains_pred !=0:
+        precision = len(tp) / grains_pred
+    else: 
+        precision = np.nan
+        
+    if grains_label != 0:
+        recall =  len(tp) / grains_label
+    else:
+        recall = np.nan
+    return precision,recall
 
 def _norm(img):
     # img_min=np.min(img)
@@ -141,14 +233,14 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
     return zip(mask_crop_sets_it,pred_crop_sets_it)
 
 
-def evaluate(model, img, ground_truth,filter_size,crop_size):
+def evaluate(model, img, ground_truth,filter_size):
     img = _norm(img)
-    pred = nn.predict(model,img,img_size =crop_size)    
+    
+    pred = nn.predict(model,img)    
     
     # prediction is never filtered
-    
-    if filter_size >= 0:  
-        ground_truth = it._filter_small(pred,filter_size=filter_size)
+    if filter_size > 0:  
+        ground_truth = it._filter_small(ground_truth,filter_size=filter_size)
         
     metrics_res = _calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)

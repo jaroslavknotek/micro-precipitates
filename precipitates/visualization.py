@@ -64,12 +64,16 @@ def plot_precipitate_details(df_features,preds_mask,img,columns=5):
     fig.tight_layout(rect=[0, 0.03, 1, 0.98])
     return fig
 
-def add_contours_morph(img,mask,contour_width = 1):
+def add_contours_morph(img,mask,contour_width = 1, color_rgb = (255,0,0)):
 
-    img_rgb = np.dstack([img]*3)
+    if len(img.shape) == 2:
+        img_rgb = np.dstack([img]*3)
+    else:
+        img_rgb = img
+        
     contours = mask - cv2.erode(mask,np.ones((3,3))) 
     contours = cv2.dilate(contours,np.ones((contour_width,contour_width)))
-    img_rgb[contours==255] = (255,0,0)
+    img_rgb[contours==255] = color_rgb
     return img_rgb
 
 def _plot_shape_bar(ax,df):

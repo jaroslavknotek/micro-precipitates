@@ -85,16 +85,26 @@ def run_training(
     args,
     model_path
 ):   
+    logging.info("Reading Dataset")
+    train_ds,val_ds = ds.prepare_datasets(
+        train_data,
+        crop_stride=args.crop_stride,
+        crop_shape = crop_shape,
+        filter_size = args.filter_size
+    )
+    
+    run_training_w_dataset(train_ds,val_ds,args,model_path)
+    
+    
+def run_training_w_dataset(
+    train_ds,
+    val_ds,
+    args,
+    model_path
+):   
     dump_output = None
         
     test_dir = pathlib.Path("../data/test/IN")
-    
-#     if dump_output is None:
-#         dump_output =pathlib.Path("../tmp/")/training_timestamp
-#         dump_output.mkdir(exist_ok=True,parents=True)
-    
-#     logging.debug("output:",dump_output)
-
     crop_shape= (args.crop_size,args.crop_size)
 
     loss = nn.resolve_loss(args.loss)
@@ -115,14 +125,6 @@ def run_training(
     test_img_mask_pairs = evaluation._read_test_imgs_mask_pairs(test_dir)
     display = DisplayCallback(dump_output, model, test_img_mask_pairs,args)
     callbacks = [earlystopper,checkpointer,display]
-
-    logging.info("Reading Dataset")
-    train_ds,val_ds = ds.prepare_datasets(
-        train_data,
-        crop_stride=args.crop_stride,
-        crop_shape = crop_shape,
-        filter_size = args.filter_size
-    )
     
     results = model.fit(
         train_ds,
@@ -130,6 +132,8 @@ def run_training(
         epochs=100,
         callbacks=callbacks
     )
+    
+    
 
 def _parse_args(args_arr = None):
     training_timestamp = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
