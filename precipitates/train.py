@@ -16,9 +16,6 @@ import numpy as np
 import json
 import matplotlib.pyplot as plt
 
-
-import wandb
-
 logging.basicConfig()
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
@@ -71,7 +68,6 @@ class DisplayCallback(tf.keras.callbacks.Callback):
             }
             logged.update(metrics_res[-1])
             logger.info(f"Epoch {epoch} img:{i}: {json.dumps(logged,indent=4)}")
-            wandb.log(logged)
             
             
 def _norm(img):
