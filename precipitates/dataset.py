@@ -39,7 +39,7 @@ def prepare_datasets(
         filter_size = filter_size)
     
     cache_path= pathlib.Path('.')
-    for f in cache_path.rglob('{cache_file_name}*'):
+    for f in cache_path.rglob(f'{cache_file_name}*'):
         try:
             os.remove(f)
         except Exception as e :
@@ -51,9 +51,10 @@ def prepare_datasets(
                .cache(cache_file_name)
     )
     
-    logger.debug(f"Found examples: {len([None for _ in dataset])}")
+    
     train_size = int((1-validation_split_factor) * augumented_dataset_len)
     val_size = int(augumented_dataset_len - train_size)
+    logger.debug(f"Found examples: {len(list(dataset))}.")
     
     train_ds = (dataset
         .take(train_size)
