@@ -25,7 +25,8 @@ class PrecipitateShape:
     shape_mask:np.array
     top_left_x: int
     top_left_y: int
-
+    width:int
+    height:int
 
 def _crop_bottom_bar(img,bar_height = 120):
     return img[:-bar_height]
@@ -58,7 +59,9 @@ def identify_precipitates_from_mask(prec_mask):
         prec = PrecipitateShape(
             shape_mask = mask,
             top_left_x = l,
-            top_left_y = t
+            top_left_y = t,
+            width = r-l,
+            height = b-t
         )
         shapes.append(prec)
     
@@ -108,6 +111,7 @@ def classify_shape(
 
     if axis_ratio < needle_ratio:
         return "shape_needle"
+
     
     circle_area = np.pi* features.circle_radius**2
     area_ratio = features.precipitate_area_px / circle_area
@@ -116,4 +120,3 @@ def classify_shape(
         return "shape_irregular"
     else:
         return "shape_circle"
-

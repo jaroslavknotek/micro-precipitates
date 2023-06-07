@@ -32,9 +32,7 @@ def _get_ellipse(features):
         lw=2,
         alpha = .5
     )
-
-
-    
+ 
 def _show_precipitate_detail(ax,features,img):
     
     radius = features.circle_radius + 2
@@ -66,12 +64,16 @@ def plot_precipitate_details(df_features,preds_mask,img,columns=5):
     fig.tight_layout(rect=[0, 0.03, 1, 0.98])
     return fig
 
-def add_contours_morph(img,mask,contour_width = 1):
+def add_contours_morph(img,mask,contour_width = 1, color_rgb = (255,0,0)):
 
-    img_rgb = np.dstack([img]*3)
+    if len(img.shape) == 2:
+        img_rgb = np.dstack([img]*3)
+    else:
+        img_rgb = img
+        
     contours = mask - cv2.erode(mask,np.ones((3,3))) 
     contours = cv2.dilate(contours,np.ones((contour_width,contour_width)))
-    img_rgb[contours==255] = (255,0,0)
+    img_rgb[contours==255] = color_rgb
     return img_rgb
 
 def _plot_shape_bar(ax,df):
@@ -88,8 +90,10 @@ def _plot_shape_bar(ax,df):
     ax.set_xlabel("Shapes")
     
 def plot_histograms(df_features,bins=20):
-    
-    areas = df_features.precipitate_area_um.to_numpy()
+    if 'precipitate_area_um' in df_features.columns: 
+        areas = df_features.precipitate_area_um.to_numpy()
+    else: 
+        areas = df_features.precipitate_area_px.to_numpy()
     
     fig,axs = plt.subplots(2,1)
     

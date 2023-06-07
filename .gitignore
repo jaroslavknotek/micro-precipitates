@@ -138,3 +138,6 @@ tmp
 /model
 /tmp
 .cache*
+wandb
+models
+.env

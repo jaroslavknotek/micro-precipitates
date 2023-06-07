@@ -19,7 +19,9 @@ def prepare_datasets(
     batch_size = 32,
     seed = 123,
     validation_split_factor = .2,
-    filter_size = 0):
+    filter_size = 0,
+    cache_file_name='.cache',
+    generator=True):
     
     
     img_paths = list(train_data_root.rglob("img.png"))
@@ -33,38 +35,45 @@ def prepare_datasets(
         mask_paths,
         crop_stride=crop_stride,
         crop_shape=crop_shape ,
-        generator=True,
+        generator=generator,
         filter_size = filter_size)
     
     cache_path= pathlib.Path('.')
-    for f in cache_path.rglob('.cache*'):
+    for f in cache_path.rglob(f'{cache_file_name}*'):
         try:
             os.remove(f)
         except Exception as e :
             logger.warn(f"deleting cache: {e}")
-
+            
     augument = _get_augumentation(seed=seed)
     dataset = (dataset
-               .cache('.cache')
-               .shuffle(batch_size)
-               .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
-               .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
+               .shuffle(batch_size,seed=seed)
+               .cache(cache_file_name)
     )
-    #size cropped to batch size
-    train_size = int(((1-validation_split_factor) * augumented_dataset_len)//batch_size * batch_size)
-    val_size = int((augumented_dataset_len - train_size)//32 *32)
     
-    steps_per_epoch = train_size//batch_size 
-    train_ds = dataset.take(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
-    val_ds = dataset.skip(train_size).batch(batch_size,drop_remainder=True).prefetch(tf.data.AUTOTUNE)
- 
-    logger.debug(f"Sizes. Train: {train_size//batch_size}, Val: {val_size//batch_size}. Batch: {batch_size}")
     
-    #hack force this to cache
-    print(len([_ for _ in val_ds]))
-    print(len([_ for _ in val_ds]))
+    train_size = int((1-validation_split_factor) * augumented_dataset_len)
+    val_size = int(augumented_dataset_len - train_size)
+    logger.debug(f"Found examples: {len(list(dataset))}.")
+    
+    train_ds = (dataset
+        .take(train_size)
+        .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
+        .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batch_size,drop_remainder=False)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+    val_ds = (dataset
+        .skip(train_size)
+        .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
+        .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
+        .batch(batch_size,drop_remainder=False)
+        .prefetch(tf.data.AUTOTUNE)
+    )
+     
+    logger.debug(f"Sizes. Train: {np.ceil(train_size/batch_size)}, Val: {np.ceil(val_size/batch_size)}. Batch: {batch_size}")
 
-    return train_ds,val_ds,steps_per_epoch
+    return train_ds,val_ds
 
 def img2crops(img, stride, shape):
     assert len(img.shape)==2,f"Image must be 2d. Is: {len(img.shape)}"

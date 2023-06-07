@@ -1,5 +1,5 @@
 numpy
-opencv-python
+# opencv-python
 tqdm
 imageio
 scikit-image
@@ -7,3 +7,7 @@ scikit-learn
 tensorflow
 matplotlib
 pandas
+streamlit
+pillow
+wandb
+azure-storage-blob
