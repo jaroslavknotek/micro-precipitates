@@ -14,7 +14,7 @@ import imageio
 import precipitates.img_tools as it
 import numpy as n
 import tensorflow as tf
-import json`
+import json
 
 import precipitates.nn as nn
 from tqdm.auto import tqdm
@@ -230,15 +230,11 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
     return zip(mask_crop_sets_it,pred_crop_sets_it)
 
 
-def evaluate(model, img, ground_truth,filter_size=0):
-    img = _norm(img)
+def evaluate(model, img, ground_truth):
+    img = _norm(img) * 255
     
     pred = nn.predict(model,img)    
     
-    # prediction is never filtered
-    if filter_size > 0:  
-        pred = it._filter_small(pred,filter_size=filter_size)
-        
     metrics_res = _calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)
 
