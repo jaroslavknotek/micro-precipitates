@@ -123,8 +123,6 @@ def predict(model, img, prediction_threshold = .5):
     preds_mask  =_decut_mask(preds_test,square_size)
     return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
-
-
 def resolve_loss(
     loss='bc',
 ):
