@@ -1,6 +1,4 @@
 import pathlib
-
-import pathlib
 import imageio
 import sys
 import precipitates.dataset
@@ -16,8 +14,7 @@ import imageio
 import precipitates.img_tools as it
 import numpy as n
 import tensorflow as tf
-import json
-
+import json`
 
 import precipitates.nn as nn
 from tqdm.auto import tqdm
@@ -163,7 +160,7 @@ def _f1(precision, recall):
         return np.nan
     return 2*(precision * recall)/(precision + recall)
 
-def _calculate_metrics(pred,label,clusters = [0,50,500,1024**2]):
+def _calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2]):
     df,p_precs,l_precs =  match_precipitates(pred,label)
     
     df['pred_area_px'] = [np.sum(p_precs==pred_id) for pred_id in df.pred_id]
@@ -233,14 +230,14 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
     return zip(mask_crop_sets_it,pred_crop_sets_it)
 
 
-def evaluate(model, img, ground_truth,filter_size):
+def evaluate(model, img, ground_truth,filter_size=0):
     img = _norm(img)
     
     pred = nn.predict(model,img)    
     
     # prediction is never filtered
     if filter_size > 0:  
-        ground_truth = it._filter_small(ground_truth,filter_size=filter_size)
+        pred = it._filter_small(pred,filter_size=filter_size)
         
     metrics_res = _calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)

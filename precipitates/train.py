@@ -38,7 +38,6 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                 img,
                 mask,
                 self.args.filter_size,
-                self.args.crop_size
             )
             
             fig,axs = plt.subplots(1,4,figsize=(16,4))
@@ -68,10 +67,9 @@ class DisplayCallback(tf.keras.callbacks.Callback):
             }
             logged.update(metrics_res[-1])
             logger.info(f"Epoch {epoch} img:{i}: {json.dumps(logged,indent=4)}")
-            
+            wandb.log(logged) 
             
 def _norm(img):
-
     img_min=np.min(img)
     img_max = np.max(img)
     return (img.astype(float)-img_min) / (img_max-img_min)

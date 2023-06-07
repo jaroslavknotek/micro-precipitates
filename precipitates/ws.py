@@ -40,13 +40,10 @@ def run_w_data():
     except Exception:
         traceback.print_exc()
         
-        
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--crop-size',required =True,type=int)
-parser.add_argument('--filter-size',required =True,type=int)
+parser.add_argument('--filter-size',required =False,default=0,type=int)
 cli_args = parser.parse_args()
-crop_size = cli_args.crop_size
 
 sweep_configuration = {
 #    'method': 'random',
@@ -60,12 +57,12 @@ sweep_configuration = {
         # 'crop_stride':{'values': [256]},
         # 'patience':{'values': [0]},
         #'loss':{'values': ['bc','wbc-1-2','wbc-2-1','wbc-5-1','bfl']}, # 'dwbc', 'wbc-1-2' removed
-        'loss':{'values': ['bc','bfl']}, # 'dwbc', 'wbc-1-2' removed
+        'loss':{'values': ['bfl']}, # 'dwbc', 'wbc-1-2' removed
         'filter_size':{'values': [cli_args.filter_size]},
         'cnn_filters':{'values': [8,16,32]},
         'cnn_depth':{'values': [2,3,4]},
         'cnn_activation':{'values': ['elu','relu']},
-        'crop_size':{'values': [crop_size]}
+        'crop_size':{'values': [cli_args.crop_size]}
      }
 }
 
@@ -79,10 +76,9 @@ sweep_id = wandb.sweep(
 
 logging.info("Preparing Dataset")
 
-
 fixed_config = {
     "crop_stride":32,
-    "crop_shape":(crop_size,crop_size),
+    "crop_shape":(cli_args.crop_size,cli_args.crop_size),
     "filter_size":0
 }
 
@@ -93,7 +89,7 @@ train_ds,val_ds = ds.prepare_datasets(
     crop_stride=fixed_config['crop_stride'],
     crop_shape = fixed_config['crop_shape'],
     filter_size = cli_args.filter_size,
-    cache_file_name=f'.cache-{crop_size}',
+    cache_file_name=f".cache-{fixed_config['crop_shape'][0]}",
     generator=False
 )
 
