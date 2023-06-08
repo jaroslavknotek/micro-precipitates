@@ -7,9 +7,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.14.5
   kernelspec:
-    display_name: computer-vision
+    display_name: micro-precipitates
     language: python
-    name: .venv
+    name: micro-precipitates
 ---
 
 ```python
@@ -24,11 +24,22 @@ import precipitates
 ```
 
 ```python
-TEST_ROOT =  pathlib.Path('data/test/IN/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_09/')
-MODEL_PATH = pathlib.Path('model/model-20230328.h5')
+TEST_ROOT =  pathlib.Path('D:/Git_Repos/TrainingData/Train_05-22/008_SMMAG_x300k_411/')
+MODEL_PATH = pathlib.Path('D:/Git_Repos/Models/Streamlit_05-16.h5')
 ```
 
 # Evaluate 
+
+```python
+import numpy as np
+np.max(img_test)
+```
+
+```python
+res = nn.predict(model,img_test)
+plt.imshow(res)
+
+```
 
 ```python
 import precipitates.evaluation as evaluation
@@ -56,5 +67,10 @@ evaluation._visualize_pairs(
 ```
 
 ```python
+plt.imshow(pred)
+```
+
+```python
+metrics_res
 
 ```

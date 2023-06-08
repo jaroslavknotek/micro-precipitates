@@ -1,0 +1,12 @@
+if exist(Folder,)
+    case 1
+        Folder=varargin;
+    otherwise
+        Folder='C:'
+end
+
+Folder=uigetdir(Folder)
+
+
+
+% refineMask(Folder)

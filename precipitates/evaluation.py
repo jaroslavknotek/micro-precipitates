@@ -231,7 +231,7 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
 
 
 def evaluate(model, img, ground_truth):
-    img = _norm(img) * 255
+    img = _norm(img) *255
     
     pred = nn.predict(model,img)    
     
