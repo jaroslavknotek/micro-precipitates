@@ -9,173 +9,134 @@ from tensorflow.keras import layers
 import random
 import os
 import logging
+import albumentations as A
+import cv2
+import imageio
 
 logger = logging.getLogger("prec")
 
 def prepare_datasets(
-    train_data_root,
-    crop_stride = 8,
-    crop_shape=(128,128),
+    dataset_root,
+    crop_size=128,
     batch_size = 32,
     seed = 123,
     validation_split_factor = .2,
     filter_size = 0,
-    cache_file_name='.cache',
-    generator=True):
+    cache_file_name_prefix='.cache',
+    repeat = 100,
+    interpolation=cv2.INTER_CUBIC):
     
+    logger.info(f"Loading Dataset from {dataset_root}")
     
-    img_paths = list(train_data_root.rglob("img.png"))
-    mask_paths = list(train_data_root.rglob("mask.png"))
-    logger.debug(f"Found {len(img_paths)} images")
-    assert len(img_paths) != 0 and len(mask_paths) != 0, "Empty dataset"
-    assert len(img_paths) == len(mask_paths), "number of masks is not equal to number of images"
- 
-    augumented_dataset_len,dataset = _get_crops_dataset(
-        img_paths,
-        mask_paths,
-        crop_stride=crop_stride,
-        crop_shape=crop_shape ,
-        generator=generator,
-        filter_size = filter_size)
+    np.random.seed = seed
+    dataset_array = load_img_mask_pair(dataset_root,filter_size)
+    train_size,val_size = _get_train_test_size(len(dataset_array), validation_split_factor)
     
-    cache_path= pathlib.Path('.')
-    for f in cache_path.rglob(f'{cache_file_name}*'):
-        try:
-            os.remove(f)
-        except Exception as e :
-            logger.warn(f"deleting cache: {e}")
-            
-    augument = _get_augumentation(seed=seed)
-    dataset = (dataset
-               .shuffle(batch_size,seed=seed)
-               .cache(cache_file_name)
-    )
+    ds_images = tf.data.experimental.from_list(dataset_array)
     
-    
-    train_size = int((1-validation_split_factor) * augumented_dataset_len)
-    val_size = int(augumented_dataset_len - train_size)
-    logger.debug(f"Found examples: {len(list(dataset))}.")
-    
-    train_ds = (dataset
-        .take(train_size)
-        .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
-        .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
-        .batch(batch_size,drop_remainder=False)
-        .prefetch(tf.data.AUTOTUNE)
-    )
-    val_ds = (dataset
-        .skip(train_size)
-        .map(augument,num_parallel_calls=tf.data.AUTOTUNE)
-        .map(_split_imgmask,num_parallel_calls=tf.data.AUTOTUNE)
-        .batch(batch_size,drop_remainder=False)
-        .prefetch(tf.data.AUTOTUNE)
-    )
-     
-    logger.debug(f"Sizes. Train: {np.ceil(train_size/batch_size)}, Val: {np.ceil(val_size/batch_size)}. Batch: {batch_size}")
-
-    return train_ds,val_ds
-
-def img2crops(img, stride, shape):
-    assert len(img.shape)==2,f"Image must be 2d. Is: {len(img.shape)}"
-    slider = np.lib.stride_tricks.sliding_window_view(img,shape)
-    strider =  slider[::stride,::stride]
-    return strider.reshape((-1,*shape))[:,:,:]
+    dss = [ds_images.take(train_size),ds_images.skip(train_size)]
+    return [_prep_ds(ds,repeat,batch_size,crop_size,interpolation) for ds in dss]
 
 
+def _filter_small(mask,size_limit):
     
-def get_crops_iterator(img_paths,stride, shape = (128,128),filter_size = 0):
-    imgs = map(precipitate.load_microscope_img,img_paths)
+    if size_limit == 0:
+        return mask
     
-    if filter_size>0:
-        imgs = (
-            precipitates.img_tools._filter_small(img,filter_size=filter_size) 
-            for img in imgs
-        )
-    
-    crop_sets_it = (
-        img2crops(img.astype(np.float32),stride, shape) 
-        for img in imgs
-    )
-    
-    for it in itertools.chain( crop_sets_it):
-        yield from it
-
-def _estimate_img_crops(img_shape,crop_shape,stride):
-    
-    h,w = img_shape
-    ch,cw = crop_shape
-    assert ch <= h and cw <= w, f"Image is smaller than crop f{(w,h)} vs {(cw,ch)}"
-    
-    if stride <= ch:
-        h_steps=(h-ch)//stride +1
-    else:
-        h_steps=(h)//stride +1
-        
-    crop_per_size = []
-    for c,s in [(ch,h),(cw,w)]:
-        steps = 1 + (s-c)//stride
-        crop_per_size.append(steps)
-        
-    h_steps,w_steps = crop_per_size
-    return h_steps*w_steps
-    
-def _estimate_dataset_size(img_paths,stride, crop_shape):
-    imgs = map(precipitate.load_microscope_img,img_paths)
-    ch,cw = crop_shape
-    
-    return sum([_estimate_img_crops(img.shape, crop_shape,stride) for img in imgs])
+    old_dtype = mask.dtype
+    mask = np.uint8(mask)
+    n,lbs = cv2.connectedComponents(mask)
+    base = np.zeros_like(mask,dtype=np.uint8)
+    for i in range(1,n):
+        component = np.uint8(lbs==i)
+        size = np.sum(component)
+        if size >= size_limit:
+            base = base | component
+    return base.astype(old_dtype)
 
 
-def _get_crops_dataset(
-    img_paths,
-    mask_paths,
-    crop_stride = 128,
-    crop_shape= (128,128),
-    generator=False,
-    filter_size = 0):
-    
-    img_paths = list(img_paths)
-    
-    tensor_shape = (crop_shape[0],crop_shape[1],4)
-    img_crops_it =  get_crops_iterator(
-        img_paths,
-        crop_stride,
-        crop_shape
-    )
-    mask_crops_it = get_crops_iterator(
-        mask_paths,
-        crop_stride,
-        crop_shape,
-        filter_size = filter_size
-    )
-    
-    three_channels =  (np.dstack([i,i,i,m])/255 for i,m in zip(img_crops_it,mask_crops_it))
-    if generator:
-        dataset_size = _estimate_dataset_size(img_paths,crop_stride,crop_shape) 
-        return dataset_size, tf.data.Dataset.from_generator(
-            lambda: three_channels ,
-            output_signature=tf.TensorSpec(shape=tensor_shape))
-    else:
-        arr = np.fromiter( three_channels ,dtype=(np.float32,tensor_shape))
-        dataset_size = arr.shape[0]
-        return dataset_size, tf.data.Dataset.from_tensor_slices(arr[...])
 
+
+def load_img_mask_pair(dataset_root,filter_size = 0):
+    dataset_array = _load_pairs(dataset_root)
+    return [(img,_filter_small(mask,filter_size)) for img,mask in dataset_array]
+
+
+def _get_train_test_size(n,validation_split_factor):
     
-def reset_random_seeds(seed):
-    os.environ['PYTHONHASHSEED']=str(seed)
-    tf.random.set_seed(seed)
-    np.random.seed = (seed)
-    random.seed = seed
+    val_size = int(np.ceil(n*validation_split_factor))
+    train_size = n-val_size
+    
+    assert val_size >0
+    assert train_size >0
+    
+    return train_size,val_size
+    
 
-@tf.function
-def _split_imgmask(imgmask):
-    img = imgmask[:,:,:3]
-    mask = tf.expand_dims(imgmask[:,:,-1],axis=2)
-    return (img,mask)
 
-def _get_augumentation(seed=123):
-    return tf.keras.Sequential([
-        layers.RandomFlip("horizontal_and_vertical",seed=seed),
-        layers.RandomRotation(0.5,seed=seed),
-        layers.RandomZoom(height_factor=(-.05,.3),width_factor=(-.05,.3),seed=seed),
+def _get_augumentation(crop_size,interpolation):
+    return A.Compose([
+        A.PadIfNeeded(crop_size,crop_size),
+        A.RandomCrop(crop_size,crop_size),
+        A.RandomBrightnessContrast(p=0.5),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.Rotate(limit=45, interpolation=interpolation),
+        A.ElasticTransform(p=.5,
+                           alpha=50, 
+                           sigma=120 * 0.05,
+                           alpha_affine=120 * 0.03,
+                           interpolation=interpolation
+                          )
     ])
+    
+
+def _prep_ds(ds,repeat,batch_size,crop_size,interpolation):
+    
+    transform = _get_augumentation(crop_size,interpolation)
+    def aug(image,mask):
+        transformed = transform(image=image ,mask=mask)
+        return transformed['image'],transformed['mask']
+    @tf.function
+    def process_data(image,mask):
+        return  tf.numpy_function(aug,inp=[image,mask], Tout = (tf.float32,tf.float32))
+
+    return ds.repeat(repeat)\
+        .map(process_data,num_parallel_calls=tf.data.experimental.AUTOTUNE)\
+        .batch(batch_size,drop_remainder=True)\
+        .prefetch(tf.data.AUTOTUNE)
+
+def _norm_float(img):
+    img_f = np.float32(img)
+    img_min = np.min(img_f)
+    img_max = np.max(img_f)
+    return (img_f-img_min)/(img_max-img_min)
+    
+
+def _ensure_2d(img):
+    match img.shape:
+        case (h,w):
+            return img
+        case (h,w,_):
+            return img[0]
+    
+def _load_img(img_path):
+    img = imageio.imread(img_path)
+    
+    img2d = _ensure_2d(img)
+    return _norm_float(img2d)
+    
+
+
+def _get_img_mask_iter(dataset_root):
+    dataset_root = pathlib.Path(dataset_root)
+    for img_root in dataset_root.glob('*'):
+        try:
+            img = _load_img(img_root/'img.png')
+            mask = _load_img(img_root/'mask.png')
+            yield img,mask
+        except FileNotFoundError as e:
+            logger.warning(f"Skipped {img_root}. Didn't find both files. Error {e}")
+    
+def _load_pairs(dataset_root):
+    return list(_get_img_mask_iter(dataset_root))
