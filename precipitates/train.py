@@ -6,6 +6,7 @@ import precipitates.nn
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 import precipitates.precipitate as precipitate
 import precipitates.evaluation as evaluation
+import precipitates.dataset as dataset
 import precipitates.nn as nn
 
 import sys
@@ -15,6 +16,9 @@ import argparse
 import numpy as np
 import json
 import matplotlib.pyplot as plt
+
+import wandb
+
 
 logging.basicConfig()
 logger = logging.getLogger("prec")
@@ -29,15 +33,16 @@ class DisplayCallback(tf.keras.callbacks.Callback):
         self.args = args
 
     def on_epoch_end(self, epoch, logs=None):
+        
+        metrics_list = []
         for i,(img,mask) in enumerate(self.test_img_mask_pair):
 #             path = self.dump_output/f'test_{i}_{epoch:03}.png'
 #             json_path = self.dump_output/f'test_{i}_{epoch:03}.json'
-            
+            mask = np.uint8(mask)
             (img,ground_truth,pred,metrics_res) = evaluation.evaluate(
                 self.model,
                 img,
-                mask,
-                self.args.filter_size,
+                mask
             )
             
             fig,axs = plt.subplots(1,4,figsize=(16,4))
@@ -49,25 +54,24 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                 metrics_res,
                 "model"
             )
-            #plt.savefig(path)
-            #json.dump(metrics_res,open(json_path,'w'))
-            
-            
-            logged = {
+                        
+            metrics = {
                 'epoch': epoch, 
                 'image_id':i,
-                # 'train_acc': train_acc,
-                # 'train_loss': train_loss, 
-                # 'val_acc': val_acc, 
                 'train_loss':logs.get("loss"),
                 'train_iou':logs.get("io_u"),
                 'val_loss': logs.get("val_loss"),
                 'val_iou': logs.get("val_io_u"),
                 
-            }
-            logged.update(metrics_res[-1])
-            logger.info(f"Epoch {epoch} img:{i}: {json.dumps(logged,indent=4)}")
-            wandb.log(logged) 
+            }|metrics_res[-1]
+            
+            metrics_list.append(metrics)
+        
+        aggregated = {}
+        for k in metrics_list[0]:
+            aggregated[k] = np.mean([d[k] for d in metrics_list])
+        logger.info(f"Epoch {epoch} img:{i}: {json.dumps(aggregated,indent=4)}")        
+        wandb.log(aggregated) 
             
 def _norm(img):
     img_min=np.min(img)
@@ -82,7 +86,6 @@ def run_training(
     logging.info("Reading Dataset")
     train_ds,val_ds = ds.prepare_datasets(
         train_data,
-        crop_stride=args.crop_stride,
         crop_shape = crop_shape,
         filter_size = args.filter_size
     )
@@ -94,16 +97,14 @@ def run_training_w_dataset(
     train_ds,
     val_ds,
     args,
-    model_path
+    model_path, 
+    test_dir
 ):   
     dump_output = None
-        
-    test_dir = pathlib.Path("../data/test/IN")
-    crop_shape= (args.crop_size,args.crop_size)
-
-    loss = nn.resolve_loss(args.loss)
+    
+    loss =nn.resolve_loss(args.loss)
     model = nn.build_unet(
-        crop_shape,
+        crop_size = args.crop_size,
         loss=loss,
         activation = args.cnn_activation,
         start_filters = args.cnn_filters,
@@ -116,7 +117,7 @@ def run_training_w_dataset(
     earlystopper = EarlyStopping(patience=args.patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     
-    test_img_mask_pairs = evaluation._read_test_imgs_mask_pairs(test_dir)
+    test_img_mask_pairs = dataset.load_img_mask_pair(test_dir,args.filter_size)
     display = DisplayCallback(dump_output, model, test_img_mask_pairs,args)
     callbacks = [earlystopper,checkpointer,display]
     
@@ -134,7 +135,6 @@ def _parse_args(args_arr = None):
     
     default_output_path =pathlib.Path("/tmp/")/training_timestamp
     parser = argparse.ArgumentParser()
-    parser.add_argument('--crop-stride',required =True,type=int)
     parser.add_argument('--patience',default=5,type=int)
     
     parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc','wbc'])

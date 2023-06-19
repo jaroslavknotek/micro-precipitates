@@ -5,7 +5,7 @@ import precipitates.dataset
 import matplotlib.pyplot as plt
 import precipitates.nn as nn
 import itertools
-from precipitates.dataset import img2crops
+from precipitates.img_tools import img2crops
 import precipitates.precipitate
 
 import matplotlib.pyplot as plt
@@ -188,6 +188,7 @@ def _calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2]):
     return metrics
 
 def _prec_rec(df):
+    
     grains_pred = len(df[~df['pred_id'].isna()])
     grains_label = len(df[~df['label_id'].isna()])
     
@@ -231,33 +232,15 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
 
 
 def evaluate(model, img, ground_truth):
-    img = _norm(img) * 255
-    
-    pred = nn.predict(model,img)    
+    pred = nn.predict(model,img) 
     
     metrics_res = _calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)
 
-def _read_test_imgs_mask_pairs(test_dir):
-    
-    img_mask_pair = []
-    img_paths = pathlib.Path(test_dir).rglob("img.png")
-    for img_path in img_paths:
-        mask_path = img_path.parent/'mask.png'
-        img = precipitates.precipitate.load_microscope_img(img_path)
-        mask =imageio.imread(mask_path)
-        img_mask_pair.append((img,mask))
-        
-    return img_mask_pair
-    
-
 def evaluate_models(
     models_paths,
-    test_imgs_folder,
-    filter_size =0
+    test_img_mask_pairs
 ):
-    
-    test_img_mask_pairs=_read_test_imgs_mask_pairs(test_imgs_folder)
     results = []
     for model_path in tqdm(models_paths,desc = "Applying model"):
         model = nn.compose_unet((128,128))
@@ -267,8 +250,7 @@ def evaluate_models(
             (img,ground_truth,pred,metrics_res) = evaluate(
                 model,
                 img,
-                mask,
-                filter_size
+                mask
             )
             
             results.append({

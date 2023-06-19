@@ -21,6 +21,7 @@ from keras import backend as K
 
 
 
+
 import keras.models
 import tensorflow as tf
 
@@ -31,7 +32,15 @@ import logging
 logger = logging.getLogger("pred")
 
 
+class ToThreeChannels(tf.keras.layers.Layer):
+    def __init__(self,**kwargs):
+        super().__init__(**kwargs)
+      
+    def call(self, inputs):
+        return tf.stack([inputs]*3,axis=3)
+    
 warnings.filterwarnings('ignore', category=UserWarning, module='skimage')
+
 seed = 42
 random.seed = seed
 np.random.seed = seed
@@ -103,21 +112,22 @@ class DynamicallyWeightedBinaryCrossentropy(tf.keras.losses.Loss):
 
 def predict(model, img, prediction_threshold = .5):
     
-    _,crop_size,_,_ = model.inputs[0].shape
+    crop_size = None
+    if len(model.inputs) > 0 and len(model.inputs[0].shape) >=2:
+        crop_size = model.inputs[0].shape[1]
+        
+    if crop_size is None:
+        crop_size = 128
+        logger.warning("Couldn't deduce 'crop_size'. Using 128.")
     
     if np.max(img) > 1:
-        logger.warning(f"Predicted img has values beyond 1. normalize to 0-1")
+        logger.warning(f"Predicted img has values beyond 1 ({np.max(img)}). normalize to 0-1")
+    
     
     test_data_2d = _cut_to_pieces(img,crop_size)
     square_size = test_data_2d.shape[0] 
-    test_data = np.array(
-        list(
-            map(
-                _ensure_three_chanels, 
-                test_data_2d.reshape((-1,crop_size,crop_size))
-            )
-        )
-    )
+    test_data = test_data_2d.reshape((-1,crop_size,crop_size))
+    
     preds_test = model.predict(test_data, verbose=0)
     preds_test = preds_test[...,0]
     preds_mask  =_decut_mask(preds_test,square_size)
@@ -171,7 +181,7 @@ def up_block(
     return Conv2D(filters, (3, 3), activation=activation, kernel_initializer=kernel_initializer, padding='same') (c)
 
 def build_unet(
-    crop_shape,
+    crop_size = None,
     loss = None,
     start_filters = 16,
     depth = 4,
@@ -179,13 +189,11 @@ def build_unet(
     dropout = .2,
     kernel_initializer = 'he_normal'
 ):
-    assert len(crop_shape) ==2
     if loss is None:
         loss = resolve_loss('bc')
     # Build U-Net model
-    inputs = Input((crop_shape[0],crop_shape[1],3))
-    
-    in_layer = inputs
+    inputs = Input((crop_size,crop_size))
+    in_layer = ToThreeChannels()(inputs)
     filters = start_filters
     skip_connections = []
     for _ in range(depth):

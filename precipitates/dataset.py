@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
 import itertools
-import precipitates.img_tools
+import precipitates.img_tools as img_tools
 from tensorflow.keras import layers
 import random
 import os
@@ -22,10 +22,9 @@ def prepare_datasets(
     seed = 123,
     validation_split_factor = .2,
     filter_size = 0,
-    cache_file_name_prefix='.cache',
     repeat = 100,
     interpolation=cv2.INTER_CUBIC):
-    
+
     logger.info(f"Loading Dataset from {dataset_root}")
     
     np.random.seed = seed
@@ -38,35 +37,16 @@ def prepare_datasets(
     return [_prep_ds(ds,repeat,batch_size,crop_size,interpolation) for ds in dss]
 
 
-def _filter_small(mask,size_limit):
-    
-    if size_limit == 0:
-        return mask
-    
-    old_dtype = mask.dtype
-    mask = np.uint8(mask)
-    n,lbs = cv2.connectedComponents(mask)
-    base = np.zeros_like(mask,dtype=np.uint8)
-    for i in range(1,n):
-        component = np.uint8(lbs==i)
-        size = np.sum(component)
-        if size >= size_limit:
-            base = base | component
-    return base.astype(old_dtype)
-
-
-
-
 def load_img_mask_pair(dataset_root,filter_size = 0):
     dataset_array = _load_pairs(dataset_root)
-    return [(img,_filter_small(mask,filter_size)) for img,mask in dataset_array]
+    return [(img,img_tools.filter_small(mask,filter_size)) for img,mask in dataset_array]
 
 
 def _get_train_test_size(n,validation_split_factor):
     
     val_size = int(np.ceil(n*validation_split_factor))
     train_size = n-val_size
-    
+    assert n>0
     assert val_size >0
     assert train_size >0
     
@@ -118,15 +98,13 @@ def _ensure_2d(img):
         case (h,w):
             return img
         case (h,w,_):
-            return img[0]
+            return img[:,:,0]
     
 def _load_img(img_path):
     img = imageio.imread(img_path)
     
     img2d = _ensure_2d(img)
     return _norm_float(img2d)
-    
-
 
 def _get_img_mask_iter(dataset_root):
     dataset_root = pathlib.Path(dataset_root)

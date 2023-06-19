@@ -15,7 +15,6 @@ logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
 
 
-
 def run_w_data():    
 
     run = wandb.init(
@@ -29,13 +28,16 @@ def run_w_data():
     ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
     model_suffix = '-'.join([ f"{k}={args[k]}" for k in sweep_configuration['parameters']])
     model_path = pathlib.Path(f"../tmp/{ts}_{train_data.parent.name}_{model_suffix}.h5")
-       
+    test_dir = pathlib.Path("data/test/IN")
+    
+    assert len(list(test_dir.rglob('*.png')))>0
     try:
         precipitates.train.run_training_w_dataset(
             train_ds,
             val_ds,
             args,
-            model_path
+            model_path,
+            test_dir
         )
     except Exception:
         traceback.print_exc()
@@ -52,45 +54,30 @@ sweep_configuration = {
     'metric': {'goal': 'maximize', 'name': 'val_iou'},
     'parameters': 
     {
-        'crop_stride':{'values': [32]},
         'patience':{'values': [5]},
-        # 'crop_stride':{'values': [256]},
-        # 'patience':{'values': [0]},
-        #'loss':{'values': ['bc','wbc-1-2','wbc-2-1','wbc-5-1','bfl']}, # 'dwbc', 'wbc-1-2' removed
         'loss':{'values': ['bfl']}, # 'dwbc', 'wbc-1-2' removed
         'filter_size':{'values': [cli_args.filter_size]},
-        'cnn_filters':{'values': [8,16,32]},
-        'cnn_depth':{'values': [2,3,4]},
-        'cnn_activation':{'values': ['elu','relu']},
+        'cnn_filters':{'values': [16]},
+        'cnn_depth':{'values': [8]},
+        'cnn_activation':{'values': ['elu']},
         'crop_size':{'values': [cli_args.crop_size]}
      }
 }
 
 sweep_id = wandb.sweep(
     sweep=sweep_configuration, 
-    project='precipitates'
+    project='precipitates-normalized'
 )
-
     
 # Start sweep job.
 
 logging.info("Preparing Dataset")
 
-fixed_config = {
-    "crop_stride":32,
-    "crop_shape":(cli_args.crop_size,cli_args.crop_size),
-    "filter_size":0
-}
-
-train_data = "../data/20230427/labeled/"
-train_data = pathlib.Path(train_data)
+train_data = pathlib.Path("data/20230617-normalized/labeled/")
 train_ds,val_ds = ds.prepare_datasets(
     train_data,
-    crop_stride=fixed_config['crop_stride'],
-    crop_shape = fixed_config['crop_shape'],
+    crop_size = cli_args.crop_size,
     filter_size = cli_args.filter_size,
-    cache_file_name=f".cache-{fixed_config['crop_shape'][0]}",
-    generator=False
 )
 
 wandb.agent(sweep_id, function=run_w_data)
