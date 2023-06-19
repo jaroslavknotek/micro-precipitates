@@ -5,6 +5,11 @@
 
 
 ```python
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]=""
+```
+
+```python
 import precipitates.nn as nn
 
 import os
@@ -30,94 +35,7 @@ from keras import backend as K
 
 import tensorflow as tf
 
-class ToThreeChannels(tf.keras.layers.Layer):
-    def __init__(self,**kwargs):
-        super().__init__(**kwargs)
-      
-    def call(self, inputs):
-        return tf.stack([inputs]*3,axis=3)
-
-def build_unet(
-    loss = None,
-    start_filters = 16,
-    depth = 4,
-    activation = 'elu',
-    dropout = .2,
-    kernel_initializer = 'he_normal'
-):
-    if loss is None:
-        loss = resolve_loss('bc')
-    # Build U-Net model
-    inputs = Input((None,None))
-    in_layer = ToThreeChannels()(inputs)
-    filters = start_filters
-    skip_connections = []
-    for _ in range(depth):
-        c,s = down_block(
-            in_layer,
-            filters,
-            activation,
-            kernel_initializer,
-            dropout
-        )
-        filters*=2
-        in_layer=c
-        skip_connections.append(s)
-        
-    middle = Conv2D(filters, (3, 3), activation=activation, kernel_initializer=kernel_initializer, padding='same') (in_layer)
-    middle = Dropout(dropout) (middle)
-    middle = Conv2D(filters, (3, 3), activation=activation, kernel_initializer=kernel_initializer, padding='same') (middle)
-
-    in_layer = middle
-    for skip_connection in reversed(skip_connections):
-        filters = filters//2
-        in_layer = up_block(
-            in_layer,
-            skip_connection,
-            filters,
-            activation,
-            kernel_initializer,
-            dropout
-        )
-
-    outputs = Conv2D(1, (1, 1), activation='sigmoid') (in_layer)
-
-    model = Model(inputs=[inputs], outputs=[outputs])
-    model.compile(
-        optimizer='adam', 
-        loss=loss,
-        metrics=[tf.keras.metrics.IoU(num_classes=2, target_class_ids=[0])],
-        run_eagerly = True)
-    
-    return model
-
-def resolve_loss(*args):
-    return nn.resolve_loss(*args)
-
-def down_block(*args):
-    return nn.down_block(*args)
-
-def up_block(*args):
-    return nn.up_block(*args)
-
-model = build_unet()
 ```
-
-    2023-06-18 17:29:09.362227: W tensorflow/compiler/xla/stream_executor/platform/default/dso_loader.cc:64] Could not load dynamic library 'libcuda.so.1'; dlerror: libcuda.so.1: cannot open shared object file: No such file or directory; LD_LIBRARY_PATH: /home/jry/.conda/envs/palivo/lib/python3.10/site-packages/cv2/../../lib64:
-    2023-06-18 17:29:09.362243: W tensorflow/compiler/xla/stream_executor/cuda/cuda_driver.cc:265] failed call to cuInit: UNKNOWN ERROR (303)
-    2023-06-18 17:29:09.362254: I tensorflow/compiler/xla/stream_executor/cuda/cuda_diagnostics.cc:156] kernel driver does not appear to be running on this host (T14): /proc/driver/nvidia/version does not exist
-    2023-06-18 17:29:09.362356: I tensorflow/core/platform/cpu_feature_guard.cc:193] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  AVX2 AVX_VNNI FMA
-    To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
-
-
-
-```python
-import pathlib
-
-weights_path = pathlib.Path('model/model-20230427192618.h5')
-model.load_weights(weights_path)
-```
-
 
 ```python
 
@@ -142,51 +60,18 @@ plt.show()
 plt.imshow(pred_res.astype(float) - mask,cmap='seismic')
 ```
 
-    /tmp/ipykernel_99704/4106452430.py:3: DeprecationWarning: Starting with ImageIO v3 the behavior of this function will switch to that of iio.v3.imread. To keep the current behavior (and make this warning disappear) use `import imageio.v2 as imageio` or call `imageio.v2.imread` directly.
-      img = imageio.imread('data/test/IN/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_10/img.png')
-    /tmp/ipykernel_99704/4106452430.py:5: DeprecationWarning: Starting with ImageIO v3 the behavior of this function will switch to that of iio.v3.imread. To keep the current behavior (and make this warning disappear) use `import imageio.v2 as imageio` or call `imageio.v2.imread` directly.
-      mask = imageio.imread('data/test/IN/DELISA LTO_08Ch18N10T_pricny rez_nulty stav_TOP_BSE_10/mask.png')
-
-
-    1/1 [==============================] - 1s 571ms/step
-
-
-
-    
-![png](output_3_2.png)
-    
-
-
-
-    
-![png](output_3_3.png)
-    
-
-
-
-
-
-    <matplotlib.image.AxesImage at 0x7f99d42d9fc0>
-
-
-
-
-    
-![png](output_3_5.png)
-    
-
-
-
 ```python
 import precipitates.dataset as dataset
+import pathlib
 
 dataset_root = pathlib.Path('data/20230617-normalized/labeled/')
-ds_train,ds_val = dataset.prepare_datasets(dataset_root,crop_size=64,repeat=50,filter_size = 20)
+ds_train,ds_val = dataset.prepare_datasets(dataset_root,crop_size=128,repeat=100,filter_size = 16)
 ```
 
 
 ```python
 import itertools
+import matplotlib.pyplot as plt
 
 for (i1,m1),(i2,m2) in itertools.islice(zip(ds_val,ds_val),0,10):
     _,(axl,axlm,axr,axrm) = plt.subplots(1,4)
@@ -196,67 +81,158 @@ for (i1,m1),(i2,m2) in itertools.islice(zip(ds_val,ds_val),0,10):
     axrm.imshow(m2[0])
     plt.show()
 ```
+```python
+import cv2
+import scipy.optimize
 
+def _construct_weight_map(weights_dict):
+    # Remap arbitrary indices to integers
+    p_map= {}
 
+    for i,v in enumerate(weights_dict.keys()):
+        p_map[v]=i
+
+    l_keys = itertools.chain(
+                *(list(k for k in v.keys()) for v in weights_dict.values())
+            )
+    l_unique = np.unique(list(l_keys))
+    l_map={}
+    for i,v in enumerate(l_unique):
+        l_map[v]=i
+        
+    weights = np.zeros((len(p_map),len(l_map)))
+    for i,(p,pv) in enumerate(weights_dict.items()):
+        for l,lv in pv.items():
+            weights[p_map[p],l_map[l]] = lv
+    return weights,p_map,l_map
     
-![png](output_5_0.png)
+def _extract_grain_mask(labels,grain_id):
+    grain = labels.copy()
+    grain[labels == grain_id] = 1
+    grain[labels != grain_id] = 0
     
-
-
-
+    if (grain == 0).all():
+        raise Exception(f"Grain {grain_id} not found")
     
-![png](output_5_1.png)
+    return grain
+
+
+def _collect_pairing_weights(p_n, p_grains,l_n, l_grains):
+    weights_dict = {}
+    iou_metric = tf.keras.metrics.BinaryIoU(target_class_ids=[0, 1], threshold=0.5)
+    for p_grain_id in range(1,p_n):
+        p_grain_mask = _extract_grain_mask(p_grains,p_grain_id)
+
+        intersecting_ids = np.unique(l_grains*p_grain_mask)
+        intersecting_ids = intersecting_ids[intersecting_ids>0]
+        
+        for l_grain_id in intersecting_ids:
+            l_grain_mask = _extract_grain_mask(l_grains,l_grain_id)
+            iou_metric.update_state(l_grain_mask,p_grain_mask)
+            weight = 1 - iou_metric.result().numpy()
+            weights_dict.setdefault(p_grain_id,{}).setdefault(l_grain_id,weight)
+            iou_metric.reset_state()
+    return weights_dict
+
+def _pair_using_linear_sum_assignment(p_n, p_grains,l_n, l_grains, cap=500):
     
-
-
-
+    if cap is not None:
+        p_n = min(cap,p_n)
+        p_grains[p_grains >cap] = 0
+        
+        l_n = min(cap,l_n)
+        l_grains[l_grains >cap] = 0
+        
+    weights_dict = _collect_pairing_weights(p_n, p_grains,l_n, l_grains)
+    weights,p_map,l_map = _construct_weight_map(weights_dict)
+    p_item_id,l_item_id = scipy.optimize.linear_sum_assignment(weights)
     
-![png](output_5_2.png)
+    inverse_p_map = { v:k for k,v in p_map.items()}
+    p_item = np.array([inverse_p_map[idx] for idx in p_item_id])
+    inverse_l_map = { v:k for k,v in l_map.items()}
+    l_item = np.array([inverse_l_map[idx] for idx in l_item_id])
+    return p_item,l_item
+
+def match_precipitates(prediction,label):
+    p_n, p_grains = cv2.connectedComponents(np.uint8(prediction))
+    l_n, l_grains = cv2.connectedComponents(np.uint8(label))
     
-
-
-
+    # pairs only #TP
+    pred_items,label_items =  _pair_using_linear_sum_assignment(
+        p_n, 
+        p_grains,
+        l_n, 
+        l_grains
+    )
+    data = list(zip(pred_items,label_items))
+    #FP
+    p_set = set(pred_items)
+    false_positives = [ i for i in range(1,p_n) if i not in p_set]
+    for i in false_positives:
+        data.append((i,None))
     
-![png](output_5_3.png)
+    #FN
+    l_set = set(label_items)
+    label_positives = [i for i in range(1,l_n) if i not in l_set]
+    for i in label_positives:
+        data.append((None,i))
     
-
-
-
+    fn = len([ (p,l) for p,l in data if p is not None and l is None ])
+    fp = len([ (p,l) for p,l in data if l is not None and p is None ])
+    tp =len([ (p,l) for p,l in data if p is not None and l is not None])
     
-![png](output_5_4.png)
-    
+        
+    return tp,fp,fn
 
 
+```
 
-    
-![png](output_5_5.png)
-    
+```python
+l1,l2= [m for i,m in itertools.islice(ds_train,0,2)]
+```
+
+```python
+[(plt.imshow(p) and plt.show()) for p in l1.numpy()[[14,28]]]
+```
+
+```python
+i1,i2 = l1.numpy()[[14,28]]
+match_precipitates(i1,i2)
+```
+
+```python
+class ComponentF1(tf.keras.metrics.Metric):
+
+    def __init__(self, name='component_f1', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.tp = self.add_weight('tp', initializer = 'zeros')
+        self.fp = self.add_weight('fp', initializer = 'zeros')
+        self.fn = self.add_weight('fn', initializer = 'zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        
+        tp,fp,fn = match_precipitates(y_pred.numpy(),y_true.numpy())
+        self.tp.assign_add(tf.constant(float(tp)))
+        self.fp.assign_add(tf.constant(float(fp)))
+        self.fn.assign_add(tf.constant(float(fn)))
+        
+
+    def result(self):
+        precision = self.tp / (self.tp + self.fp)
+        recall = self.tp / (self.tp + self.fn)
+        if precision + recall ==0:
+            return np.nan
+        
+        return 2*(precision * recall)/(precision + recall)
 
 
+myf1 = ComponentF1()
+i1 = l1[14]
+i2 = l1[28]
+myf1.update_state(i1,i2)
+myf1.result()
 
-    
-![png](output_5_6.png)
-    
-
-
-
-    
-![png](output_5_7.png)
-    
-
-
-
-    
-![png](output_5_8.png)
-    
-
-
-
-    
-![png](output_5_9.png)
-    
-
-
+```
 
 ```python
 
