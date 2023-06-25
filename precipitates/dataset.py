@@ -61,6 +61,7 @@ def _get_augumentation(crop_size,interpolation):
         A.RandomBrightnessContrast(p=0.5),
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.5),
+        A.augmentations.transforms.GaussNoise(.2),
         A.Rotate(limit=45, interpolation=interpolation),
         A.ElasticTransform(p=.5,
                            alpha=50, 
