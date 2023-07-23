@@ -100,19 +100,29 @@ def _ensure_2d(img):
             return img
         case (h,w,_):
             return img[:,:,0]
-    
-def _load_img(img_path):
+
+def load_image(img_path,normalize=True,ensure_two_channels = True,ensure_square = True):    
     img = imageio.imread(img_path)
     
-    img2d = _ensure_2d(img)
-    return _norm_float(img2d)
+    if ensure_square:
+        m = np.min(list(img.shape[:2]))
+        img = img[:m,:m]
+    
+    if ensure_two_channels:
+        img = _ensure_2d(img)
+    
+    if normalize:
+        img = _norm_float(img)
+    
+    return img
 
 def _get_img_mask_iter(dataset_root):
     dataset_root = pathlib.Path(dataset_root)
     for img_root in dataset_root.glob('*'):
         try:
-            img = _load_img(img_root/'img.png')
-            mask = _load_img(img_root/'mask.png')
+            img = load_image(img_root/'img.png')
+            mask = load_image(img_root/'mask.png')
+            mask = (mask>0).astype(mask.dtype)
             yield img,mask
         except FileNotFoundError as e:
             logger.warning(f"Skipped {img_root}. Didn't find both files. Error {e}")

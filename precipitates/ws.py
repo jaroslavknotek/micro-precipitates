@@ -14,12 +14,11 @@ logging.basicConfig()
 logger = logging.getLogger("prec")
 logger.setLevel(logging.DEBUG)
 
-
 def run_w_data():    
 
     run = wandb.init(
         #project='my-prec-sweep-small',
-        dir="../tmp/",
+        dir="tmp/",
         entity='knotek',
         save_code = False,
     )
@@ -28,7 +27,7 @@ def run_w_data():
     ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
     model_suffix = '-'.join([ f"{k}={args[k]}" for k in sweep_configuration['parameters']])
     model_path = pathlib.Path(f"../tmp/{ts}_{train_data.parent.name}_{model_suffix}.h5")
-    test_dir = pathlib.Path("data/test/IN")
+    test_dir = pathlib.Path("data/test/")
     
     assert len(list(test_dir.rglob('*.png')))>0
     try:
@@ -54,10 +53,10 @@ sweep_configuration = {
     'metric': {'goal': 'maximize', 'name': 'val_iou'},
     'parameters': 
     {
-        'patience':{'values': [5]},
+        #'patience':{'values': [5]},
         'loss':{'values': ['bfl']}, # 'dwbc', 'wbc-1-2' removed
         'filter_size':{'values': [cli_args.filter_size]},
-        'cnn_filters':{'values': [16]},
+        'cnn_filters':{'values': [8]},
         'cnn_depth':{'values': [8]},
         'cnn_activation':{'values': ['elu']},
         'crop_size':{'values': [cli_args.crop_size]}
@@ -66,14 +65,13 @@ sweep_configuration = {
 
 sweep_id = wandb.sweep(
     sweep=sweep_configuration, 
-    project='precipitates-normalized'
+    project='precipitates-20230625'
 )
-    
 # Start sweep job.
 
 logging.info("Preparing Dataset")
 
-train_data = pathlib.Path("data/20230617-normalized/labeled/")
+train_data = pathlib.Path("data/20230623/labeled/")
 train_ds,val_ds = ds.prepare_datasets(
     train_data,
     crop_size = cli_args.crop_size,

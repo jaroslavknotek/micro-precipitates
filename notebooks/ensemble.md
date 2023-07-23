@@ -5,7 +5,7 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.4
+      jupytext_version: 1.14.6
   kernelspec:
     display_name: palivo_general
     language: python
@@ -15,19 +15,18 @@ jupyter:
 ```python
 %load_ext autoreload
 %autoreload 2
-
 ```
 
 ```python
 import os
-os.environ['CUDA_VISIBLE_DEVICES']=""
+#os.environ['CUDA_VISIBLE_DEVICES']=""
 import tensorflow as tf
 ```
 
 ```python
 import pathlib
 
-model_paths = list(pathlib.Path("../tmp").rglob("*.h5"))
+model_paths = list(pathlib.Path("../../tmp").rglob("*.h5"))
 
 assert len(model_paths)>0
 print(len(model_paths))
@@ -37,13 +36,18 @@ print(len(model_paths))
 # relu depth=3 filters = 8 crop_size = 128 filter_size = 0 loss = bc
 
 def _is_picked_model(name):    
-    all_conds =[
-        #["cnn_activation=relu","cnn_depth=4","cnn_filters=8","crop_size=128","filter_size=0","loss=bfl"],
-        ["cnn_activation=elu","cnn_depth=4","cnn_filters=8","crop_size=64","filter_size=0","loss=bfl"],
-        ["cnn_activation=elu","cnn_depth=3","cnn_filters=16","crop_size=64","filter_size=0","loss=bfl"],
-        ["cnn_activation=elu","cnn_depth=3","cnn_filters=16","crop_size=64","filter_size=0","loss=bc"],
+    # all_conds =[
+    #     #["cnn_activation=relu","cnn_depth=4","cnn_filters=8","crop_size=128","filter_size=0","loss=bfl"],
+    #     ["cnn_activation=elu","cnn_depth=4","cnn_filters=8","crop_size=64","filter_size=0","loss=bfl"],
+    #     ["cnn_activation=elu","cnn_depth=3","cnn_filters=16","crop_size=64","filter_size=0","loss=bfl"],
+    #     ["cnn_activation=elu","cnn_depth=3","cnn_filters=16","crop_size=64","filter_size=0","loss=bc"],
+    # ]
+        
+    all_conds = [
+    ['loss=bfl','filter_size=0','cnn_filters=8','cnn_depth=5','cnn_activation=elu','crop_size=256'],
+    ['loss=bfl','filter_size=0','cnn_filters=8','cnn_depth=6','cnn_activation=elu','crop_size=256'],
+    ['loss=bfl','filter_size=0','cnn_filters=8','cnn_depth=7','cnn_activation=elu','crop_size=512']
     ]
-    
     for conditions in all_conds:
         if all([c in name for c in conditions]):
             return True
@@ -68,12 +72,11 @@ import re
 
 def _load_model(model_path):
     crop_size=int(re.search('crop_size=([0-9]+)',model_path.stem).groups()[0])
-    crop_shape = (crop_size,crop_size)
     depth=int(re.search('cnn_depth=([0-9])',model_path.stem).groups()[0])
     activation=re.search('cnn_activation=([a-z]+)',model_path.stem).groups()[0]
     filters = int(re.search('cnn_filters=([0-9]+)',model_path.stem).groups()[0])
     model = nn.build_unet(
-        crop_shape,
+        crop_size = crop_size,
         depth= depth,
         start_filters=filters,
         activation = activation
@@ -87,12 +90,14 @@ models_loaded =[_load_model(model_path) for model_path in tqdm(picked_models_pat
 ```
 
 ```python
+import numpy as np
+
 class EnsembleWrapper:
     def __init__(self,models):
         self.models = models
-        sizes=set([ m.inputs[0].shape[1] for m in models])
-        assert len(sizes) ==1, "Only one size of input shape allowed"
-        self.inputs = [np.zeros((1,next(iter(sizes)),1,1))]
+        # sizes=set([ m.inputs[0].shape[1] for m in models])
+        # assert len(sizes) ==1, "Only one size of input shape allowed"
+        # self.inputs = [np.zeros((1,next(iter(sizes)),1,1))]
         
     def predict(self,*args,**kwargs):
         predictions = np.stack(
@@ -101,14 +106,24 @@ class EnsembleWrapper:
 
         pred = np.mean(predictions, axis=0)
         return np.expand_dims(pred,axis=3)
+    
+    def predict_ens(self,img):
+        predictions = np.stack(
+            [nn.predict(model,img) for model in self.models]
+        )
+
+        pred = np.mean(predictions, axis=0)
+        return pred
+        return np.expand_dims(pred,axis=3)
+        
         
 
 ensemble_model = EnsembleWrapper(models_loaded)
 
-models = list(models_loaded)
-models.append(ensemble_model)
-model_names = [ p.stem for p in picked_models_paths]
-model_names.append("ensemble")
+# models = list(models_loaded)
+# models.append(ensemble_model)
+# model_names = [ p.stem for p in picked_models_paths]
+# model_names.append("ensemble")
 
 #mean_ens_res = evaluation.evaluate(ensemble_model,img/255,ground_truth,0)
 ```
@@ -145,7 +160,48 @@ for model in  tqdm(models,desc='eval'):
 ```
 
 ```python
+import precipitates.dataset as ds
+import imageio
+prelabels_root = pathlib.Path("../../20230717-delta/")
+prelabels_orig = np.array(list(prelabels_root.rglob("*.tif")))
+np.random.seed = 123
+np.random.shuffle(prelabels_orig)
+top_twenty_paths = prelabels_orig[:20]
 
+top_twenty = [ds.load_image(p) for p in top_twenty_paths]
+top_twenty_paths
+
+```
+
+```python
+import matplotlib.pyplot as plt
+img = top_twenty[0]
+preds = [  ensemble_model.predict_ens(img) for img in tqdm(top_twenty)]
+```
+
+```python
+plt.imshow(img)    
+```
+
+```python
+for p,img,pred in zip(top_twenty_paths,top_twenty, preds):
+    _,axs = plt.subplots(1,2,figsize=(20,10))
+    axs[0].imshow(img)
+    axs[1].imshow(pred)
+    plt.suptitle(p)
+    plt.show()
+    
+```
+
+```python
+thr = .8
+
+for p,img,pred in zip(top_twenty_paths,top_twenty, preds):
+    p_str = str(p)
+    p_init_str = p_str.replace('.tif','_init.png')
+    p_init = pathlib.Path(p_init_str)
+    
+    imageio.imwrite(p_init,np.uint8(pred>np.max(pred)*thr)*255)    
 ```
 
 ```python

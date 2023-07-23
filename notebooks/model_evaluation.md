@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.5
+      jupytext_version: 1.14.6
   kernelspec:
-    display_name: computer-vision
+    display_name: palivo_general
     language: python
-    name: .venv
+    name: palivo_general
 ---
 
 ```python
@@ -20,7 +20,7 @@ jupyter:
 import pathlib
 import sys
 sys.path.insert(0,'../precipitates')
-import precipitates
+import precipitates.nn as nn
 ```
 
 ```python

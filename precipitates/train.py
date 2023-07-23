@@ -57,7 +57,6 @@ class DisplayCallback(tf.keras.callbacks.Callback):
                         
             metrics = {
                 'epoch': epoch, 
-                'image_id':i,
                 'train_loss':logs.get("loss"),
                 'train_iou':logs.get("io_u"),
                 'val_loss': logs.get("val_loss"),
@@ -114,7 +113,9 @@ def run_training_w_dataset(
     logger.debug(f"Will checkpiont model to {model_path}")
     #model_path = pathlib.Path(dump_output/model_name)
     
-    earlystopper = EarlyStopping(patience=args.patience, verbose=1)
+    patience = arg.patience if hasattr(args, 'patience') else 5
+    
+    earlystopper = EarlyStopping(patience= patience, verbose=1)
     checkpointer = ModelCheckpoint(model_path, verbose=1, save_best_only=True)
     
     test_img_mask_pairs = dataset.load_img_mask_pair(test_dir,args.filter_size)
@@ -137,7 +138,7 @@ def _parse_args(args_arr = None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--patience',default=5,type=int)
     
-    parser.add_argument('--loss',default = 'bc',choices = ['dwbc','bc','wbc'])
+    parser.add_argument('--loss',default = 'bfl',choices = ['dwbc','bc','wbc','bfl'])
     parser.add_argument('--train-data',required=True)
     
     parser.add_argument('--output',required=False,default=default_output_path)
@@ -150,7 +151,6 @@ if __name__ == "__main__":
     
     
     args = _parse_args()
-    
     
     output_dir= pathlib.Path(args.output)
     output_dir.mkdir(exist_ok=True,parents=True)

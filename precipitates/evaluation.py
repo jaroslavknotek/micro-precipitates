@@ -27,6 +27,10 @@ import scipy.optimize
 
 import pandas as pd
 
+import logging
+
+logger = logging.getLogger("pred")
+
 def _construct_weight_map(weights_dict):
     # Remap arbitrary indices to integers
     p_map= {}
@@ -85,9 +89,16 @@ def _pair_using_linear_sum_assignment(p_n, p_grains,l_n, l_grains, cap=500):
     return p_item,l_item
     
     
-def match_precipitates(prediction,label):
+def match_precipitates(prediction,label,component_limit = 500):
     p_n, p_grains = cv2.connectedComponents(prediction)
     l_n, l_grains = cv2.connectedComponents(label)    
+    
+    if p_n > component_limit or l_n > component_limit:
+        logger.warning(f"Too many components found Pred:{p_n} Lab:{l_n}. Cropping")
+        p_n = min(p_n,component_limit)
+        p_grains[p_grains>component_limit] = 0
+        l_n = min(l_n,component_limit)
+        l_grains[l_grains>component_limit] = 0
     
     # pairs only #TP
     pred_items,label_items = _pair_using_linear_sum_assignment(
@@ -160,8 +171,8 @@ def _f1(precision, recall):
         return np.nan
     return 2*(precision * recall)/(precision + recall)
 
-def _calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2]):
-    df,p_precs,l_precs =  match_precipitates(pred,label)
+def calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2],component_limit = 500):
+    df,p_precs,l_precs =  match_precipitates(pred,label,component_limit = component_limit)
     
     df['pred_area_px'] = [np.sum(p_precs==pred_id) for pred_id in df.pred_id]
     df['label_area_px'] = [np.sum(l_precs==label_id) for label_id in df.label_id]
@@ -234,7 +245,7 @@ def _zip_pred_label_crops(mask, pred,stride = 128,shape=(128,128)):
 def evaluate(model, img, ground_truth):
     pred = nn.predict(model,img) 
     
-    metrics_res = _calculate_metrics(pred,ground_truth)
+    metrics_res = calculate_metrics(pred,ground_truth)
     return (img,ground_truth,pred,metrics_res)
 
 def evaluate_models(

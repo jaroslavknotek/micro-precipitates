@@ -3,6 +3,8 @@ import sys
 import random
 import warnings
 
+
+import precipitates.img_tools as it
 import numpy as np
 from tqdm.auto import tqdm
 from itertools import chain
@@ -29,7 +31,7 @@ import precipitates.dataset as dataset
 
 import logging
 
-logger = logging.getLogger("pred")
+logger = logging.getLogger("prec")
 
 
 class ToThreeChannels(tf.keras.layers.Layer):
@@ -110,7 +112,7 @@ class DynamicallyWeightedBinaryCrossentropy(tf.keras.losses.Loss):
         return keras.backend.mean(weighted_bin_crossentropy)
     
 
-def predict(model, img, prediction_threshold = .5):
+def predict(model, img, prediction_threshold = .5, return_raw = False):
     
     crop_size = None
     if len(model.inputs) > 0 and len(model.inputs[0].shape) >=2:
@@ -124,14 +126,17 @@ def predict(model, img, prediction_threshold = .5):
         logger.warning(f"Predicted img has values beyond 1 ({np.max(img)}). normalize to 0-1")
     
     
-    test_data_2d = _cut_to_pieces(img,crop_size)
-    square_size = test_data_2d.shape[0] 
-    test_data = test_data_2d.reshape((-1,crop_size,crop_size))
+    stride = crop_size//4
+    test_data = it.cut_to_squares(img,crop_size,stride)
     
+        
     preds_test = model.predict(test_data, verbose=0)
     preds_test = preds_test[...,0]
-    preds_mask  =_decut_mask(preds_test,square_size)
-    return (preds_mask> prediction_threshold).astype(np.uint8)*255
+    preds_mask  =it.decut_squares(preds_test,stride ,img.shape)
+    if return_raw:
+        return preds_mask
+    else:
+        return (preds_mask> prediction_threshold).astype(np.uint8)*255
 
 def resolve_loss(
     loss='bc',
@@ -258,34 +263,6 @@ def compose_unet(
 def load_model(model_path):
     return keras.models.load_model(str(model_path))
     
-def _cut_to_pieces(img,shape):
-    assert shape % 4 ==0,"Shape must be divisible by 4"
-    stride = shape//4
-    shape = (shape,shape)
-    windows = np.lib.stride_tricks.sliding_window_view(img,shape)
-    return windows[::stride,::stride]
-   
-
-def _decut_mask(crops,square_size):
-    window_size = crops[0].shape[0]
-    sh = window_size//4
-    img_shape = (square_size -1) * sh + window_size
-    windows = crops.reshape( (square_size,square_size,window_size,window_size))
-
-    sums = np.zeros((img_shape,img_shape))
-    counts = np.zeros((img_shape,img_shape))
-
-    for i in range(square_size):
-        for j in range(square_size):
-            t = i*sh
-            b = t + window_size
-            l = j*sh
-            r = l + window_size
-            sums[t:b,l:r] += windows[i,j]
-            counts[t:b,l:r] += 1
-
-    return  sums/counts 
-
 def _ensure_three_chanels(img):
     if len(img.shape) != 3 or img.shape[2]!=3:
         return np.dstack([img]*3)
