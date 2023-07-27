@@ -1,8 +1,5 @@
-#%load_ext autoreload
-#%autoreload 2
-
 import sys
-sys.path.insert(0,'..')
+sys.path.insert(0, '..')
 import pathlib
 import numpy as np
 import imageio
@@ -21,12 +18,12 @@ fixed_config = {
 }
 
 
-model_path = pathlib.Path(f"D:/Git_Repos/Models/Streamlit_07-26.h5")
-train_data = "D:\Git_Repos\TrainingData\Streamlit_RIP"
+model_path = pathlib.Path(f"D:/Users/prochazka/Git_Repos/Models/Streamlit_07-26.h5")
+train_data = "D:/Users/prochazka/Git_Repos/TrainingData/Streamlit_RIP"
 train_data = pathlib.Path(train_data)
 train_imgs = list(train_data.rglob("**/img.png"))
 print(f"Train images count: {len(train_imgs)}")
-
+raise ValueError('FOO')
 for img in train_imgs:
     strimg=str(img)
     print(str(img).replace(str(train_data),'').replace('img.png','')[1:-1])
@@ -45,13 +42,13 @@ args = {
     'patience':5,
     # 'crop_stride':{'values': [256]},
     # 'patience':{'values': [0]},
-    #'loss':{'values': ['bc','wbc-1-2','wbc-2-1','wbc-5-1','bfl']}, # 'dwbc', 'wbc-1-2' removed
-    'loss':'bfl', # 'dwbc', 'wbc-1-2' removed
-    'filter_size':0,
-    'cnn_filters':16,
-    'cnn_depth':3,
-    'cnn_activation':'elu',
-    'crop_size':128
+    # 'loss':{'values': ['bc','wbc-1-2','wbc-2-1','wbc-5-1','bfl']}, # 'dwbc', 'wbc-1-2' removed
+    'loss': 'bfl', # 'dwbc', 'wbc-1-2' removed
+    'filter_size': 0,
+    'cnn_filters': 16,
+    'cnn_depth': 3,
+    'cnn_activation': 'elu',
+    'crop_size': 128
 }  
 
 class my_dict:
