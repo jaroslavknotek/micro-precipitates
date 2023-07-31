@@ -82,7 +82,7 @@ def run_training(
     args,
     model_path
 ):   
-    logging.info("Reading Dataset")
+    logger.info("Reading Dataset")
     train_ds,val_ds = ds.prepare_datasets(
         train_data,
         crop_shape = crop_shape,
