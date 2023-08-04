@@ -16,11 +16,17 @@ from scipy.ndimage import distance_transform_edt
 logger = logging.getLogger("prec")
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, images_mask_tuples, crop_size,repeat = 1):
+    def __init__(
+        self, 
+        images_mask_tuples, 
+        crop_size,repeat = 1,
+        generate_weight_map = True
+    ):
         self.images_mask_tuples = images_mask_tuples
         self.transform = _get_augumentation(crop_size)
         self.crop_size = crop_size
         self.repeat = repeat
+        self.generate_weight_map = generate_weight_map
         
     def __len__(self):
         return len(self.images_mask_tuples) * self.repeat
@@ -57,6 +63,9 @@ class Dataset(torch.utils.data.Dataset):
             1: 5  # objects
         }
         weight_map = unet_weight_map(foreground, wc)
+        if not self.generate_weight_map:
+            weight_map = np.ones(weight_map.shape)
+        
         y = np.stack([noise_y[0],foreground,background,border])
         x =  np.concatenate([noise_x]*3,axis=0)
         has_label = np.expand_dims(np.array([has_label]),axis=(1,2,3))
@@ -73,6 +82,7 @@ class Dataset(torch.utils.data.Dataset):
 def prepare_train_val_dataset(
     dataset_array,
     crop_size,
+    apply_weight_map = True,
     val_size = .2,
     batch_size = 32,
     repeat = 1
@@ -82,10 +92,20 @@ def prepare_train_val_dataset(
     val_count = int(total_dataset_len * val_size)
     train_count = total_dataset_len -  val_count 
 
-    train_dataset = Dataset(dataset_array[:-val_count],crop_size,repeat=repeat)
+    train_dataset = Dataset(
+        dataset_array[:-val_count],
+        crop_size,
+        repeat=repeat,
+        generate_weight_map = apply_weight_map
+    )
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-    val_dataset = Dataset(dataset_array[-val_count:],crop_size,repeat=repeat)
+    val_dataset = Dataset(
+        dataset_array[-val_count:],
+        crop_size,
+        repeat=repeat, 
+        generate_weight_map = apply_weight_map
+    )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
     return train_dataloader,val_dataloader
 

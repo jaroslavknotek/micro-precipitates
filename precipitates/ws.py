@@ -33,13 +33,15 @@ def run_sweep(
     device_name='cuda',
     repeat = 100
 ):
-    run = wandb.init(
+    _ = wandb.init(
         dir="wandb-tmp/",
         entity='knotek',
         save_code = False,
     )
     
     args = wandb.config
+    apply_weight_map = args.apply_weight_map == 1
+    
     if np.log2(args.crop_size) < args.cnn_depth +2:
         logger.warn(f"Cannot have crop_size={args.crop_size} and cnn_depth={args.cnn_depth}")
         return
@@ -50,12 +52,18 @@ def run_sweep(
         ts = datetime.strftime(datetime.now(),'%Y%m%d%H%M%S')
         model_suffix = '-'.join([ f"{k}={args[k]}" for k in sweep_configuration['parameters'] if not k.startswith('_') ])
         model_eval_root = results_dir_root/f"{ts}-{model_suffix}"
-        model_eval_root.mkdir(exist_ok=True,parents=True)
+        
+        
+        # exclude only_denoise images
+        if args.loss_denoise_weight == 0:
+            dataset_array = [ (img,mask) for img,mask in dataset_array if mask is not None]
         
         # train
+                
         train_dataloader,val_dataloader = ds.prepare_train_val_dataset(
             dataset_array,
             args.crop_size,
+            apply_weight_map,
             repeat = repeat
         )
 
@@ -87,6 +95,7 @@ def run_sweep(
             patience = patience
         )
         
+        model_eval_root.mkdir(exist_ok=True,parents=True)
         model_tmp_path =model_eval_root/ f'model.torch'
         
         wandb.unwatch(model)
@@ -122,10 +131,11 @@ if __name__ == "__main__":
         {
             # 'crop_size':{'values':[64,128,256,512]},
             # 'cnn_depth':{'values':[3,4,5,6,7,8]},
+            'apply_weight_map': {'values':[0,1]},
             'crop_size':{'values':[256]},
             'cnn_depth':{'values':[6]},
             'loss':{'values': ['fl']},
-            'loss_denoise_weight':{'values':[10,50]},
+            'loss_denoise_weight':{'values':[1,10,50]},
             'cnn_filters':{'values': [8,16]},
         }
     }

@@ -24,14 +24,15 @@ def _calculate_loss(
     loss_denoise,
     loss,
     denoise_loss_weight = 2):
-    # todo add denoising weight
-    ls_denoise = loss_denoise(pred[:,0] * mask, y[:,0] * mask)
-    ls_denoise_weighted = ls_denoise*denoise_loss_weight
-    # todo this is baaad
+    
     ls_segmentation = loss(pred[:,1:,...]*has_label,y[:,1:,...]*has_label)
     ls_seg_masked = (ls_segmentation*wm).mean()
     
-    return ls_seg_masked + ls_denoise_weighted
+    if denoise_loss_weight == 0:
+        return ls_seg_masked
+    else:   
+        ls_denoise = loss_denoise(pred[:,0] * mask, y[:,0] * mask)
+        return ls_seg_masked + ls_denoise*denoise_loss_weight
 
 def train_model(
     model,
