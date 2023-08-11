@@ -102,7 +102,6 @@ def run_sweep(
         torch.save(model, model_tmp_path)
         
         test_data,test_names = named_test_data
-        test_data,test_names = ds.load_img_mask_pair(test_data_path,append_names=True)
         evaluations = evaluation.evaluate_model(model, test_data,test_names,args.crop_size)
         visualization.save_evaluations(model_eval_root, evaluations,loss_dict)
         

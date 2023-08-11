@@ -1,5 +1,5 @@
 numpy
-# opencv-python
+# opencv-python # installed with conda
 tqdm
 imageio
 scikit-image
@@ -9,8 +9,6 @@ pandas
 streamlit
 pillow
 wandb
-azure-storage-blob
 albumentations
--f https://download.pytorch.org/whl/cu117/torch_stable.html
-torch==1.13.1+cu117
-torchvision==0.14.1+cu117
+torch
+torchvision

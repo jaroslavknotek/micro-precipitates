@@ -89,11 +89,16 @@ def prepare_train_val_dataset(
 ):
     
     total_dataset_len = len(dataset_array)
-    val_count = int(total_dataset_len * val_size)
-    train_count = total_dataset_len -  val_count 
-
+    
+    #ensure equal sampling e.g. every nth for val and not every nth for train
+    val_len = int(np.ceil(total_dataset_len*val_size))
+    val_idx = np.uint8(np.linspace(0,total_dataset_len-1,val_len))
+    train_idx = set(np.arange(total_dataset_len)) - set (val_idx)
+    train_data = [dataset_array[idx] for idx in train_idx]
+    val_data = [dataset_array[idx] for idx in val_idx]
+    
     train_dataset = Dataset(
-        dataset_array[:-val_count],
+        train_data,
         crop_size,
         repeat=repeat,
         generate_weight_map = apply_weight_map
@@ -101,7 +106,7 @@ def prepare_train_val_dataset(
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
     val_dataset = Dataset(
-        dataset_array[-val_count:],
+        val_data,
         crop_size,
         repeat=repeat, 
         generate_weight_map = apply_weight_map

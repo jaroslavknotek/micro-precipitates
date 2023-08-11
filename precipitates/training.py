@@ -41,16 +41,21 @@ def train_model(
     optimizer,
     loss_denoise,
     loss,
+    model_save_dir = None,
     denoise_loss_weight = 2,
     wandb = None,
     device = 'cpu',
-    patience = 5
+    patience = 5,
+    epochs_n = None
 ):
     early_stopper = nnet.EarlyStopper(patience=patience, min_delta=0)
     
     loss_dict = {}
-    
-    epochs = itertools.count()
+    if epochs_n is None:
+        epochs = itertools.count()
+    else:
+        epochs = range(epochs_n)
+        
     for e in tqdm(epochs,desc='Training epochs'):
         model.train()
         train_losses = []
@@ -103,4 +108,10 @@ def train_model(
         if early_stopper.early_stop(validation_loss):             
             logger.info("early stopping")
             break
+        
+        if model_save_dir!=None and early_stopper.counter == 0:
+            logger.info("Saving best model")
+            best_model_path = model_save_dir/'model-best.torch'
+            torch.save(model,best_model_path)
+            
     return model, loss_dict
