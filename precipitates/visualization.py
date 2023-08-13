@@ -151,7 +151,7 @@ def save_evaluations(
     thr = .7
 ):  
     fig = _plot_loss(loss_dict)
-    fig.savefig("loss_figure.png")
+    fig.savefig(eval_root/"loss_figure.png")
     plt.close()
     
     for k,v in evaluations.items():

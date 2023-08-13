@@ -29,7 +29,7 @@ def run_sweep(
     dataset_array, 
     named_test_data,
     results_dir_root,
-    patience = 5,
+    patience = 20,
     device_name='cuda',
     repeat = 100
 ):
@@ -123,19 +123,17 @@ if __name__ == "__main__":
     cli_args = parser.parse_args()
 
     sweep_configuration = {
-        'method': 'random',
+        'method': 'grid',
         'name': 'sweep',
         'metric': {'goal': 'minimize', 'name': 'val_loss'},
         'parameters': 
         {
-            # 'crop_size':{'values':[64,128,256,512]},
-            # 'cnn_depth':{'values':[3,4,5,6,7,8]},
-            'apply_weight_map': {'values':[0,1]},
-            'crop_size':{'values':[256]},
-            'cnn_depth':{'values':[6]},
+            'apply_weight_map': {'values':[1]},
+            'crop_size':{'values':[128,256]},
+            'cnn_depth':{'values':[5,6]},
             'loss':{'values': ['fl']},
-            'loss_denoise_weight':{'values':[1,10,50]},
-            'cnn_filters':{'values': [8,16]},
+            'loss_denoise_weight':{'values':[2]},
+            'cnn_filters':{'values': [16]},
         }
     }
 

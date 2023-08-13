@@ -5,7 +5,7 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.5
+      jupytext_version: 1.14.6
   kernelspec:
     display_name: cv_torch
     language: python
@@ -32,14 +32,12 @@ import itertools
 import numpy as np
 import torch
 
-#don't import wandb
-
 import logging
 logging.basicConfig()
 logger = logging.getLogger('pred')
 logger.setLevel(logging.DEBUG)
 
-fh = logging.FileHandler('../xx-results.log')
+fh = logging.FileHandler('../x2-results.log')
 fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 
@@ -197,7 +195,7 @@ def _train_run(model_eval_root,args,dataset_array,device, patience,repeat):
         denoise_loss_weight = args.loss_denoise_weight,
         device=device,
         patience = patience,
-        epochs_n = 1
+        epochs_n = None
     )
 
     return model,loss_dict
@@ -215,15 +213,13 @@ def run_w_config(
     model_suffix = '-'.join([ f"{k}={args_dict[k]}" for k in args_dict])
     model_eval_root = results_dir_root/f"{ts}-{model_suffix}"
     
-    
     args = SimpleNamespace(**args_dict)    
-    
     
     if np.log2(args.crop_size) < args.cnn_depth +2:
         logger.warn(f"Cannot have crop_size={args.crop_size} and cnn_depth={args.cnn_depth}")
         return
     
-    try:    
+    try:
         device = torch.device(device_name)
         
         model_eval_root.mkdir(exist_ok=True,parents=True)
@@ -258,31 +254,21 @@ def run_w_config(
 import precipitates.dataset as ds
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 
-data_20230724_root = pathlib.Path('../data/20230724/labeled/')
-data_denoise_root = pathlib.Path('../data/delisa-new-up/')
+#data_20230724_root = pathlib.Path('../data/20230724/labeled/')
+data_denoise_root = pathlib.Path('../../delisa-new-up/')
 data_test_root = pathlib.Path('../data/test/')
 
-result_root = pathlib.Path('/home/jry/source/jaroslavknotek/micro-precipitates/results')
+result_root = pathlib.Path('../results')
 
 named_data_test= ds.load_img_mask_pair(data_test_root,append_names=True)
 
 data_20230623 = ds.load_img_mask_pair(data_20230623_root)
 
-denoise_path = ds._filter_not_used_denoise_paths(data_20230724_root,data_denoise_root)
+denoise_path = ds._filter_not_used_denoise_paths(data_20230623_root,data_denoise_root)
 denoised_imgs = [ds.load_image(d) for d in denoise_path]
 data_denoised = list(zip(denoised_imgs,[None]*len(denoised_imgs)))
 
-f"{len(data_20230623)=},{len(named_data_test[0])=},{len(data_denoised)=}"
-```
-
-```python
-total_dataset_len = 123
-val_size = .2
-val_len = int(np.ceil(total_dataset_len*val_size))
-val_idx = np.uint8(np.linspace(0,total_dataset_len-1,val_len))
-train_idx = set(np.arange(total_dataset_len)) - set (val_idx)
-assert len(val_idx) + len(train_idx) == total_dataset_len
-len(train_idx),len(val_idx)
+#f"{len(data_20230623)=},{len(named_data_test[0])=},{len(data_denoised)=}"
 ```
 
 ```python
@@ -298,26 +284,37 @@ cols = [
 ]
 
 params_data =[
-    (0,128,5,'fl',0,8),
-    (0,128,5,'fl',1,8),
-    (0,128,5,'fl',10,8),
-    (1,128,5,'fl',0,8),
-    (1,128,5,'fl',1,8),
-    (1,128,5,'fl',10,8),
-    (0,128,5,'fl',0,16),
-    (0,128,5,'fl',1,16),
-    (0,128,5,'fl',10,16),
-    (1,128,5,'fl',0,16),
-    (1,128,5,'fl',1,16),
-    (1,128,5,'fl',10,16),
+    # (0,128,5,'fl',0,8),
+    # (0,128,5,'fl',1,8),
+    # (0,128,5,'fl',10,8),
+    # (1,128,5,'fl',0,8),
+    # (1,128,5,'fl',1,8),
+    # (1,128,5,'fl',10,8),
+    # (0,128,5,'fl',0,16),
+    # (0,128,5,'fl',1,16),
+    # (0,128,5,'fl',10,16),
+    # (1,128,5,'fl',0,16),
+    # (1,128,5,'fl',1,16),
+    # (1,128,5,'fl',10,16),
+    
+    # (1,256,6,'fl',0,8),
+    # (1,256,6,'fl',1,8),
+    
+    (1,256,6,'fl',10,8),
+    (0,256,6,'fl',0,8),
+    (0,256,6,'fl',1,8),
+    (0,256,6,'fl',10,8),
     
     (1,256,6,'fl',0,16),
+    (1,256,6,'fl',1,16),
     (1,256,6,'fl',10,16),
+    
     (0,256,6,'fl',0,16),
+    (0,256,6,'fl',1,16),
     (0,256,6,'fl',10,16)
 ]
 
-df = pd.DataFrame(params_data,columns = cols)
+df = pd.DataFrame(reversed(params_data),columns = cols)
 ```
 
 ```python
@@ -326,16 +323,13 @@ SimpleNamespace(**args_list[0])
 ```
 
 ```python
-#args_dict = args_list[0]
-```
-
-```python
 for args_dict in args_list:
     dataset = data_20230623
     if args_dict['loss_denoise_weight'] != 0:
         dataset = dataset + data_denoised
 
-    logger.info(f"len: {len(dataset)=}")
+    logger.info(f"Starging: len: {len(dataset)=}")
+    logger.debug(f"config: {args_dict}")
     metrics = run_w_config(
         args_dict,
         dataset,
@@ -344,5 +338,5 @@ for args_dict in args_list:
         patience=20,
         repeat=50
     ) 
-    print(metrics)
+    logger.info(metrics)
 ```
