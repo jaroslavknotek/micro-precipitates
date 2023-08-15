@@ -1,15 +1,9 @@
 import pathlib
-import imageio
 import sys
-import precipitates.dataset
-import matplotlib.pyplot as plt
 import itertools
 from precipitates.img_tools import img2crops
-import precipitates.precipitate
 
-import matplotlib.pyplot as plt
 import imageio
-
 import precipitates.img_tools as it
 import numpy as n
 import json
@@ -159,12 +153,12 @@ def _iou_from_arr(label_arr,pred_arr):
         return np.nan
     return _iou(label_mask,pred_mask)
 
-def _f1(precision, recall):
+def f1(precision, recall):
     if precision + recall ==0:
         return np.nan
     return 2*(precision * recall)/(precision + recall)
 
-def calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2],component_limit = 500):
+def calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2],component_limit = 500,append_df = False):
     df,p_precs,l_precs =  match_precipitates(pred,label,component_limit = component_limit)
     
     df['pred_area_px'] = [np.sum(p_precs==pred_id) for pred_id in df.pred_id]
@@ -180,10 +174,13 @@ def calculate_metrics(pred,label,clusters = [0,20,50,100,500,1024**2],component_
         metrics[int(u)] = {
             "precision":float(p),
             "recall":float(r),
-            "f1":float(_f1(p,r))
+            "f1":float(f1(p,r))
         }
     
-    return metrics
+    if append_df:
+        return metrics,df
+    else:
+        return metrics
 
 def _prec_rec(df):
     
@@ -208,80 +205,83 @@ def _norm(img):
     img_max = np.max(img)
     return (img.astype(float)-img_min) / (img_max-img_min)
 
+def _threshold_foreground(foreground,thr):
+    if thr == 0:
+        return np.ones_like(foreground,dtype = np.uint8)
+    elif thr == 1:
+        return np.zeros_like(foreground,dtype = np.uint8)
+    p = np.zeros_like(foreground)
+    p[foreground>=thr] = 1
+    return np.uint8(p)
 
-def evaluate_model(model,test_data,test_data_names,crop_size,segmentation_thr = .7,device='cuda'):    
+def _calc_prec_rec_from_pred(y,p):    
+
+    if (p == 1).all():
+        return (0,1)
+    elif (p == 0).all():
+        return (1,0)
+    
+    y = np.uint8(y)
+    df,_,_ = match_precipitates(p,y)
+    return _prec_rec(df)
+
+def sample_precision_recall(ground_truth,foreground,thresholds):
+    
+    thr_imgs = [
+        _threshold_foreground(foreground,thr) 
+        for thr in thresholds
+    ]
+        
+    precs_recs = [
+        _calc_prec_rec_from_pred(ground_truth,img) 
+        for img in thr_imgs
+    ]
+    pr = np.array(precs_recs)
+    precs, recs = pr[np.argsort(pr[:,0])].T
+    f1s = np.array([f1(prec,rec)  for prec,rec in zip(precs,recs)])
+    
+    return thr_imgs,precs,recs,f1s
+
+def evaluate_model(
+    model,
+    test_data,
+    test_data_names,
+    crop_size,
+    device='cuda'
+):  
+    
+    thr_low = .4
+    thr_high = .8
+    n = 5
+    thresholds = np.concatenate([
+        [0.0],
+        np.linspace(thr_low,thr_high,n),
+        [1.0]
+    ])
+    
     evaluations = {}
     for (test_x,test_y),name in zip(test_data,test_data_names):
         img_dict = nnet.predict(model,test_x,crop_size,device=device)
-        img_dict['y'] = test_y
+        img_dict['y'] = np.uint8(test_y>0)     
+        
+        logger.info(f"Sampling precision recall ({len(thresholds)})")
+        thr_imgs,precs,recs,f1s = sample_precision_recall(
+            img_dict['y'],
+            img_dict['foreground'],
+            thresholds
+        )
+        
+        imgs_prec_rec = [
+            {
+                "precision":p,
+                "recall":r,
+                "f1":f,
+                "threshold":t
+            }
+            for p,r,f,t in zip(precs,recs,f1s,thresholds)
+        ]
+        
+        evaluations.setdefault(name.stem,{})['samples'] = imgs_prec_rec
         evaluations.setdefault(name.stem,{})['images'] = img_dict
-    
-        pred = np.uint8(img_dict['foreground']>segmentation_thr)
-        gt = np.uint8(img_dict['y']>0)    
-        metrics_res = calculate_metrics(pred,gt)
-        evaluations.setdefault(name.stem,{})['metrics'] = metrics_res
         
     return evaluations
-
-
-# def evaluate(model, img, ground_truth):
-#     pred = nn.predict(model,img) 
-    
-#     metrics_res = calculate_metrics(pred,ground_truth)
-#     return (img,ground_truth,pred,metrics_res)
-
-# def evaluate_models(
-#     models_paths,
-#     test_img_mask_pairs
-# ):
-#     results = []
-#     for model_path in tqdm(models_paths,desc = "Applying model"):
-#         model = nn.compose_unet((128,128))
-#         model.load_weights(model_path)
-        
-#         for img,mask in test_img_mask_pairs:
-#             (img,ground_truth,pred,metrics_res) = evaluate(
-#                 model,
-#                 img,
-#                 mask
-#             )
-            
-#             results.append({
-#                 "img":img,
-#                 "mask":ground_truth,
-#                 "pred":pred,
-#                 "metrics": metrics_res,
-#                 "model_path": model_path
-#             })
-
-#     return results
-
-# def _visualize_pairs(axs,img,mask,pred,metrics,model_name):
-#     full_img_index = -1
-#     f1 = metrics[full_img_index]['f1']
-#     iou = metrics[full_img_index]['iou']
-#     title = f"{model_name} - f1:{f1},iou:{iou}"
-#     axs[1].set_title(title)
-#     for ax,img in zip(axs,[img,mask,pred]):
-#         ax.imshow(img)
-
-#     idxs = list(metrics.keys())
-#     ious = [v['iou'] for v in metrics.values()]
-#     f1s = [v['f1'] for v in metrics.values()]
-
-#     axs[-1].plot(idxs,f1s,'x',label='F1')
-#     axs[-1].plot(idxs,ious,'x',label='IOU')
-#     axs[-1].legend()
-
-# def _visualize(results):
-#     fig,axs = plt.subplots(len(results),4,figsize=(16,4*len(results)))
-#     for ax_r,row in zip(axs,results):
-#         img = row['img']
-#         mask = row['mask']
-#         pred = row['pred']
-#         metrics = row['metrics']
-#         model_path = row['model_path']
-#         model_name = f"{model_path.parent.name} - {model_path.name}"
-#         _visualize_pairs(ax_r,img,mask,pred,metrics,model_name)
-#     return fig
-
