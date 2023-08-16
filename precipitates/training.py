@@ -13,8 +13,6 @@ logging.basicConfig()
 logger = logging.getLogger('pred')
 logger.setLevel(logging.DEBUG)
 
-
-
 def _calculate_loss(
     y,
     pred,
@@ -50,6 +48,7 @@ def train_model(
 ):
     early_stopper = nnet.EarlyStopper(patience=patience, min_delta=0)
     
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min')
     loss_dict = {}
     if epochs_n is None:
         epochs = itertools.count()
@@ -95,12 +94,17 @@ def train_model(
                     loss,
                     denoise_loss_weight
                 )
-                val_losses.append(ls.item())
+                ls_num = ls.item()
+                val_losses.append(ls_num)
+                # scheduler.step(ls_num)
+            
 
         loss_dict.setdefault("train_loss",[]).append(train_losses)
         loss_dict.setdefault("val_loss",[]).append(val_losses)
 
         validation_loss = np.mean(val_losses)
+        val_losses.append(validation_loss)
+        
         if wandb is not None:
             wandb.log({"val_loss": validation_loss})
         

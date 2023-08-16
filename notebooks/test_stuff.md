@@ -37,7 +37,12 @@ logging.basicConfig()
 logger = logging.getLogger('pred')
 logger.setLevel(logging.DEBUG)
 
-fh = logging.FileHandler('../x2-results.log')
+formatter = logging.Formatter(
+    '%(process)d: %(asctime)s - %(filename)s:%(funcName)s:%(lineno)d - %(levelname)s - %(message)s'
+)
+
+fh = logging.FileHandler('../xr-results.log')
+fh.setFormatter(formatter)
 fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
 
@@ -300,18 +305,18 @@ params_data =[
     # (1,256,6,'fl',0,8),
     # (1,256,6,'fl',1,8),
     
-    (1,256,6,'fl',10,8),
-    (0,256,6,'fl',0,8),
-    (0,256,6,'fl',1,8),
+    #(1,256,6,'fl',10,8),
+    # (0,256,6,'fl',0,8),
+    # (0,256,6,'fl',1,8),
     (0,256,6,'fl',10,8),
     
     (1,256,6,'fl',0,16),
     (1,256,6,'fl',1,16),
-    (1,256,6,'fl',10,16),
+    # (1,256,6,'fl',10,16),
     
-    (0,256,6,'fl',0,16),
-    (0,256,6,'fl',1,16),
-    (0,256,6,'fl',10,16)
+    # (0,256,6,'fl',0,16),
+    # (0,256,6,'fl',1,16),
+    # (0,256,6,'fl',10,16)
 ]
 
 df = pd.DataFrame(reversed(params_data),columns = cols)
@@ -339,4 +344,8 @@ for args_dict in args_list:
         repeat=50
     ) 
     logger.info(metrics)
+```
+
+```python
+
 ```
