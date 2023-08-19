@@ -16,6 +16,7 @@ jupyter:
 import sys
 sys.path.insert(0,'..')
 import precipitates.nnet as nnet
+
 ```
 
 ```python
