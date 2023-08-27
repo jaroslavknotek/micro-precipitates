@@ -66,17 +66,18 @@ class Dataset(torch.utils.data.Dataset):
         if not self.generate_weight_map:
             weight_map = np.ones(weight_map.shape)
         
-        y = np.stack([noise_y[0],foreground,background,border])
+        y = np.stack([foreground,background,border])
         x =  np.concatenate([noise_x]*3,axis=0)
         has_label = np.expand_dims(np.array([has_label]),axis=(1,2,3))
 
-        return (
-            x,
-            y, 
-            mask[None,...], 
-            has_label,
-            np.expand_dims(weight_map,axis=0)
-        )
+        return {
+            'x':x,
+            'y_denoise':noise_y[0][None,...], 
+            'mask_denoise':mask[None,...],
+            'y_segmentation':y,
+            'weight_map':weight_map[None,...],
+            'has_label':has_label
+        }
     
 
 def prepare_train_val_dataset(
