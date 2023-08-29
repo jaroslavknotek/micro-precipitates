@@ -1,3 +1,4 @@
+import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import pathlib
@@ -207,16 +208,6 @@ def prepare_datasets(
     return [_prep_ds(ds,repeat,batch_size,crop_size,interpolation) for ds in dss]
 
 
-def load_img_mask_pair(dataset_root,append_names = False):
-    named_pairs = list(_get_img_mask_iter(dataset_root))
-    
-    pairs = [(img,mask) for _,img,mask in named_pairs]
-    if append_names:
-        names = [r[0] for r in named_pairs]
-        return pairs,names
-    else:
-        return pairs
-
 def _get_augumentation(crop_size,interpolation=cv2.INTER_CUBIC):
     
     # make space for augumentations -> prevents mirroring
@@ -268,13 +259,24 @@ def load_image(img_path,normalize=True,ensure_two_dim = True,ensure_square = Tru
     
     return img
 
-def _get_img_mask_iter(dataset_root):
+
+def get_img_dict_targets(dataset_root):
     dataset_root = pathlib.Path(dataset_root)
+    names=  ['img','mask','weightmap']
+    exts = ['png','tif']
+    
+    name_exts_p = list(itertools.product(*[names,exts]))
+    
     for img_root in dataset_root.glob('*'):
-        try:
-            img = load_image(img_root/'img.png')
-            mask = load_image(img_root/'mask.png')
-            mask = (mask>0).astype(mask.dtype)
-            yield img_root,img,mask
-        except FileNotFoundError as e:
-            logger.warning(f"Skipped {img_root}. Didn't find both files. Error {e}")
+        img_dict = {}
+
+        for name,ext in name_exts_p:
+            fn = img_root/f'{name}.{ext}'
+            
+            if not fn.exists():
+                continue
+            
+            img_dict['filename'] = img_root.stem
+            img_dict[name] = load_image(fn)
+            
+        yield img_dict
