@@ -71,12 +71,14 @@ result_root = pathlib.Path('../rev-results')
 train_params = {
     'train_denoise_weight':1,
     'val_denoise_weight':1,
+    'unet_weight_map_separation_weight':4,
+    'unet_weight_map_artifacts_weight':0,
     'patience':20,
     'segmentation_dataset_path':data_root,
     'denoise_dataset_path':data_denoise_root,
     "crop_size":128,
     "val_size":.2,
-    "note":"refactoring",
+    "note":"add artifacts - set to 0",
     "augumentation_gauss_noise_val" :.02,
     "augumentation_preserve_orientation":True
 }
@@ -163,8 +165,7 @@ class Dataset(torch.utils.data.Dataset):
         crop_size,
         transform,
         weight_maps=None, 
-        repeat = 1,
-        generate_weight_map = True
+        repeat = 1
     ):
         self.images = images
         self.labels = labels
@@ -173,7 +174,6 @@ class Dataset(torch.utils.data.Dataset):
         self.transform = transform
         self.crop_size = crop_size
         self.repeat = repeat
-        self.generate_weight_map = generate_weight_map
         
     def __len__(self):
         return len(self.images) * self.repeat
@@ -216,17 +216,19 @@ class Dataset(torch.utils.data.Dataset):
         background = np.abs(foreground -1)
         border = ds._get_border(foreground)
 
-        wc = {
-            0: 1, # background
-            1: 5  # objects
-        }
+        art_weight = train_params['unet_weight_map_artifacts_weight']
+        sep_weight = train_params['unet_weight_map_separation_weight']
         
-        if not self.generate_weight_map:
+        if sep_weight == 0:
             sep_weight_map = np.ones(weight_map.shape)
         else:
+            wc = {
+                0: 1, # background
+                1: sep_weight +1  # objects
+            }
             sep_weight_map = ds.unet_weight_map(foreground, wc)
         
-        weight_map = np.float32((art_weight_map -1) + (sep_weight_map - 1) + 1)
+        weight_map = np.float32((art_weight_map -1) * art_weight + (sep_weight_map - 1) + 1)
         
         y = np.stack([foreground,background,border])
         x =  np.concatenate([noise_x]*3,axis=0)
@@ -234,7 +236,7 @@ class Dataset(torch.utils.data.Dataset):
 
         return {
             'x':x,
-            'y_denoise':noise_y[0][None,...], 
+            'y_denoise':noise_y, 
             'mask_denoise':mask[None,...],
             'y_segmentation':y,
             'weight_map':weight_map[None,...],
@@ -246,7 +248,6 @@ def prepare_train_val_dataset(
     labels,
     crop_size,
     weight_maps = None,
-    apply_weight_map = True,
     val_size = .2,
     batch_size = 32,
     repeat = 1
@@ -270,8 +271,7 @@ def prepare_train_val_dataset(
         crop_size,
         train_t,
         weight_maps = weight_maps[:-val_count],
-        repeat=repeat,
-        generate_weight_map = apply_weight_map
+        repeat=repeat
     )
     train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
@@ -281,8 +281,7 @@ def prepare_train_val_dataset(
         crop_size,
         val_t,
         weight_maps = weight_maps[-val_count:],
-        repeat=repeat, 
-        generate_weight_map = apply_weight_map
+        repeat=repeat
     )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_dataloader,val_dataloader
@@ -301,7 +300,7 @@ def plot_img_row(imgs,img_size = 4 ):
 ```
 
 ```python
-
+import itertools
 def to_mask(a):
     if a is None:
         return None
@@ -322,27 +321,23 @@ def _sample_ds(targets,crop_size):
         preserve_orientation=train_params['augumentation_preserve_orientation']
     )
 
-
-    weight_maps = [None]*len(images)
-
     train_dataset = Dataset(
         images,
         masks,
         crop_size,
         train_t,
         weight_maps = weight_maps,
-        repeat=50,
-        generate_weight_map = True
+        repeat=50
     )
     
-    tts = [ t for t in targets if 'mask' in t]
+    tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
     
-    for t in tts[:5]:
-        img = t['img']
-        mask = t['mask']
-        wm = t['weightmap']
-        
-        name = t['filename']
+
+    
+    for t in itertools.islice( tts,0,5):
+        img = t['x'][0]
+        mask = t['y_segmentation'][0]
+        wm = np.squeeze(t['weight_map'])
         
         plot_img_row([img,mask,wm])
         
@@ -352,8 +347,6 @@ denoise_targets = [ {'img':den}  for den in denoised_imgs]
 final_targets = segmentation_targets + denoise_targets
 
 _sample_ds(final_targets,128)
-        
-
 ```
 
 # Training
@@ -540,9 +533,7 @@ def _train_run(
     device, 
     patience,
     repeat
-):
-    apply_weight_map = args.apply_weight_map == 1
-    
+):    
     # exclude only_denoise images
     if args.train_loss_denoise_weight == 0:
         targets = [ t for t in targets if 'mask' in t]
@@ -561,7 +552,6 @@ def _train_run(
         images,
         masks,
         args.crop_size,
-        apply_weight_map = apply_weight_map,
         weight_maps = weight_maps,
         repeat = repeat,
         val_size = train_params['val_size']
