@@ -40,6 +40,12 @@ try:
     print(logger)
 except NameError:
     logger  =_setup_logger('pred',path = '../rev-results.log')
+    
+try:
+    print(res_logger)
+except NameError:
+    res_logger  =_setup_logger('results',path = f'../training_arguments_with_results.log')
+
 ```
 
 ```python
@@ -50,6 +56,7 @@ import precipitates.nnet as nnet
 
 ```python
 import torch
+import numpy as np
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 ```
@@ -60,11 +67,17 @@ import pathlib
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 data_20230823_root = pathlib.Path('../data/20230823_rev/labeled/')
 
+
 data_root = data_20230823_root
 data_denoise_root = pathlib.Path('../../delisa-all-data/')
 
 data_test_root = pathlib.Path('../data/test/')
 result_root = pathlib.Path('../rev-results')
+model_eval_root = pathlib.Path('../results-tmp/')
+```
+
+```python
+# TODO: compare different dataset - `repeat` value
 ```
 
 ```python
@@ -72,13 +85,13 @@ train_params = {
     'train_denoise_weight':1,
     'val_denoise_weight':1,
     'unet_weight_map_separation_weight':4,
-    'unet_weight_map_artifacts_weight':0,
+    'unet_weight_map_artifacts_weight':1,
     'patience':20,
     'segmentation_dataset_path':data_root,
     'denoise_dataset_path':data_denoise_root,
     "crop_size":128,
     "val_size":.2,
-    "note":"add artifacts - set to 0",
+    "note":"make fair val/train splits",
     "augumentation_gauss_noise_val" :.02,
     "augumentation_preserve_orientation":True
 }
@@ -109,6 +122,65 @@ import itertools
 
 import numpy as np
 import torch
+```
+
+```python
+
+
+def batched(array, n):
+    return [array[i::n] for i in range(n)]
+
+def fair_split_train_val_indices_to_batches(labels,batch_size,val_size):
+    is_denoise = np.array([ l is None for l in labels ])
+
+    batches = batch_fair(
+        is_denoise,
+        batch_size
+    )
+
+    assert np.unique([ len(b) for b in batches]) == [batch_size]
+    assert len(np.unique(np.array(batches).flatten())) == len(labels)
+    assert batches.shape[0] * batches.shape[1] >= len(labels)
+
+    val_batches_num = int(np.ceil(len(batches)* val_size))
+    val_batches = batches[-val_batches_num:]
+    train_batches = batches[:-val_batches_num]
+
+    train_idx = np.concatenate(train_batches)
+    val_idx = np.concatenate(val_batches)
+
+    return train_idx,val_idx
+
+def batch_fair(is_denoise,batch_size):
+    denoise_idx = np.argwhere(is_denoise).flatten().copy()
+    segmantation_idx = np.argwhere(~is_denoise).flatten().copy()
+    
+    np.random.shuffle(denoise_idx)
+    np.random.shuffle(segmantation_idx)
+
+    total = len(is_denoise)
+    n_d = len(is_denoise[~is_denoise])
+    n_s = total - n_d
+
+    batches_num = int(np.ceil(total/batch_size))
+    
+    batched_denoise = batched(denoise_idx,batches_num)
+    batched_segmentaiton = batched(segmantation_idx,batches_num)
+    
+    batches_of_ids = []
+    for den,seg in zip(batched_denoise,batched_segmentaiton):
+        
+        rest_num = batch_size - len(den) - len(seg)
+        rest = []
+        if rest_num >0:
+            rand_idx = np.random.randint(0,high = len(denoise_idx),size=(rest_num,))
+            rest = denoise_idx[rand_idx]
+        
+        batch = np.concatenate([den,seg,rest])
+        batches_of_ids.append(batch)
+        assert len(batch) == batch_size,f'{len(batch)=} {batch_size=}'
+    return np.array(batches_of_ids)
+
 ```
 
 ```python
@@ -243,6 +315,10 @@ class Dataset(torch.utils.data.Dataset):
             'has_label':has_label
         }
     
+def index_list_by_list(_list,indices):
+    return [_list[i] for i in indices]
+
+
 def prepare_train_val_dataset(
     images,
     labels,
@@ -252,9 +328,6 @@ def prepare_train_val_dataset(
     batch_size = 32,
     repeat = 1
 ):
-    total_dataset_len = len(images)
-    val_count = int(total_dataset_len * val_size)
-    train_count = total_dataset_len -  val_count 
     
     train_t,val_t = get_train_val_augumentation(
         crop_size,
@@ -265,22 +338,36 @@ def prepare_train_val_dataset(
     if weight_maps is None:
         weight_maps = [None]*len(images)
         
+    train_idc, val_idc = fair_split_train_val_indices_to_batches(
+        labels,
+        batch_size,
+        val_size
+    )
+    
+    total_dataset_len = len(images)
+    val_count = int(total_dataset_len * val_size)
+    train_count = total_dataset_len -  val_count 
+    
+    
+    
+        
     train_dataset = Dataset(
-        images[:-val_count],
-        labels[:-val_count],
+        index_list_by_list(images,train_idc) ,
+        index_list_by_list(labels,train_idc),
         crop_size,
         train_t,
-        weight_maps = weight_maps[:-val_count],
+        weight_maps = index_list_by_list(weight_maps,train_idc),
         repeat=repeat
     )
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # Don't shufle when using fair split
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
 
     val_dataset = Dataset(
-        images[-val_count:],
-        labels[-val_count:],
+        index_list_by_list(images,val_idc),
+        index_list_by_list(labels,val_idc),
         crop_size,
         val_t,
-        weight_maps = weight_maps[-val_count:],
+        weight_maps = index_list_by_list(weight_maps,val_idc),
         repeat=repeat
     )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -306,6 +393,12 @@ def to_mask(a):
         return None
     return np.uint8(a>0)
 
+def to_weight_map(a):
+    if a is None:
+        return None
+    
+    return a + 1
+
 def _sample_ds(targets,crop_size):
     images = []
     masks = []
@@ -313,7 +406,7 @@ def _sample_ds(targets,crop_size):
     for t in targets:
         images.append(t['img'])
         masks.append(to_mask(t.get('mask',None)))
-        weight_maps.append(t.get('weightmap',None))   
+        weight_maps.append(to_weight_map(t.get('weightmap',None))) 
         
     train_t,val_t = get_train_val_augumentation(
         crop_size,
@@ -332,8 +425,6 @@ def _sample_ds(targets,crop_size):
     
     tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
     
-
-    
     for t in itertools.islice( tts,0,5):
         img = t['x'][0]
         mask = t['y_segmentation'][0]
@@ -341,8 +432,6 @@ def _sample_ds(targets,crop_size):
         
         plot_img_row([img,mask,wm])
         
-        
-    
 denoise_targets = [ {'img':den}  for den in denoised_imgs]
 final_targets = segmentation_targets + denoise_targets
 
@@ -360,6 +449,7 @@ def _train_epoch(
     denoise_loss_weight,
     device='cpu'
 ):
+    model.train()
     train_losses = []
 
     for targets in dataloader:
@@ -405,13 +495,15 @@ def train_model(
     val_dataloader,
     calc_loss_fn,
     checkpoint_path = None,
+    evaluator = None,
     train_loss_denoise_weight = 1,
     val_loss_denoise_weight = 1,
     device = 'cpu',
     patience = np.inf,
-    epochs = 100
+    epochs = 100,
+    save_epochs = 10,
 ):
-
+    
     checkpointer = MetricCheckpointer(model,checkpoint_path)
     early_stopper = nnet.EarlyStopper(patience=patience, min_delta=0)
     epochs_l = range(epochs) if epochs is not None else itertools.count()
@@ -420,7 +512,7 @@ def train_model(
     validation_losses = []
     
     model.to(device)
-    model.train()
+    
     optimizer = torch.optim.Adam(model.parameters(),lr = .001)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
@@ -428,7 +520,7 @@ def train_model(
         patience = patience //2
     )
     
-    for epoch in tqdm(epochs_l,desc='Training epochs'):        
+    for epoch in tqdm(epochs_l,desc='Training epochs'):  
         train_loss = _train_epoch(
             model,
             train_dataloader,
@@ -455,8 +547,11 @@ def train_model(
             f"{epoch=} {validation_loss=:.5f} {early_stopper.counter=} {learning_rate=}"
         )
         
-        
         before_val_loss = checkpointer.min_validation_loss
+        
+        if evaluator is not None:
+            evaluator.evaluate_on_epoch(model,epoch)
+        
         if checkpointer.checkpoint_if_best(validation_loss):
             best_val_loss = checkpointer.min_validation_loss
             logger.info(f"checkpoint best model {before_val_loss=:.5} -> {best_val_loss:.5}")
@@ -532,7 +627,8 @@ def _train_run(
     targets,
     device, 
     patience,
-    repeat
+    repeat,
+    evaluator
 ):    
     # exclude only_denoise images
     if args.train_loss_denoise_weight == 0:
@@ -544,7 +640,7 @@ def _train_run(
     for t in targets:
         images.append(t['img'])
         masks.append(to_mask(t.get('mask',None)))
-        weight_maps.append(t.get('weightmap',None))          
+        weight_maps.append(to_weight_map(t.get('weightmap',None)))          
     
     weight_maps = [None]*len(images)
     
@@ -576,6 +672,7 @@ def _train_run(
         train_loss_denoise_weight = train_loss_denoise_weight,
         val_loss_denoise_weight = val_loss_denoise_weight,
         checkpoint_path = best_model_path,
+        evaluator = evaluator,
         calc_loss_fn = loss,
         device = device,
         epochs = 200,
@@ -622,16 +719,24 @@ def run_w_config(
     if np.log2(args.crop_size) < args.cnn_depth +2:
         logger.warn(f"Cannot have crop_size={args.crop_size} and cnn_depth={args.cnn_depth}")
         return
-    
+                
+    evaluator = EpochModelEvaluator(
+        test_targets,
+        model_eval_root,
+        crop_size  =args.crop_size,
+    )
+
     device = torch.device(device_name)
 
     model_eval_root.mkdir(exist_ok=True,parents=True)
     model,loss_dict = _train_run(
         model_eval_root,
-        args,targets,
+        args,
+        targets,
         device,
         patience,
-        repeat
+        repeat,
+        evaluator
     )    
     model_tmp_path =model_eval_root/ f'model-last.torch'
 
@@ -645,7 +750,6 @@ def run_w_config(
 import pandas as pd
 
 args_dict={
-    'apply_weight_map':1,
     'crop_size':train_params['crop_size'],
     'cnn_depth':5,
     'loss':'fl',
@@ -657,24 +761,11 @@ args_dict={
 ```
 
 ```python
-denoise_targets = [ {'img':den}  for den in denoised_imgs]
-final_targets = segmentation_targets + denoise_targets
+import json
+import precipitates.visualization as vis
 
-eval_root,loss_dict = run_w_config(
-    args_dict,
-    final_targets,
-    test_targets,
-    result_root,
-    patience=train_params['patience'],
-    repeat=50
-) 
-```
-
-# Evaluate
-
-```python
 import precipitates.evaluation as ev
-model_eval_root = pathlib.Path('../results-tmp/')
+
 
 def _norm(img):
     # img_min=np.min(img)
@@ -772,16 +863,6 @@ def evaluate_model(
     return evaluations
 
 
-eval_root.mkdir(exist_ok=True,parents=True)
-model = torch.load(eval_root/'model-best.torch')
-evaluations = evaluate_model(model,test_targets,train_params['crop_size'])
-
-```
-
-```python
-import json
-import precipitates.visualization as vis
-
 def save_evaluations(
     eval_root,
     evaluations,
@@ -797,15 +878,8 @@ def save_evaluations(
         eval_path = eval_root/k
         eval_path.mkdir(parents = True,exist_ok = True)
         img_dict = v['images']
-        # FIX
         
-        
-        imgs_prec_rec = v['samples']
-        
-        thresholds = [ vv['threshold'] for vv in imgs_prec_rec]
-        precisions = [ vv['precision'] for vv in imgs_prec_rec]
-        recalls = [ vv['recall'] for vv in imgs_prec_rec]
-        f1s = [ vv['f1'] for vv in imgs_prec_rec]
+        thresholds = [ vv['threshold'] for vv in v['samples']]
         
         imgs = img_dict | {
             f"pred_{thr:.2}":np.uint8(img_dict['foreground']>thr) 
@@ -814,14 +888,7 @@ def save_evaluations(
         
         # save img
         vis._save_imgs(eval_path, imgs)
-        
-        fig,ax = plt.subplots(1,1)
-        plot_precision_recall_curve(precisions,recalls,f1s,thresholds,ax=ax)
-        plt.suptitle(f"{eval_root.stem}\n{k}")
-        plt.tight_layout()
-        fig.savefig(eval_path/f"prec_rec_plot.png")
-        plt.close()
-        
+                
         # save fig
         fig = vis.plot_evaluation(imgs,ax_figsize)
         fig.suptitle(k)
@@ -840,52 +907,55 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
-```
 
-```python
 import json
 import matplotlib.pyplot as plt
 
 
-thrss = []
-precss = []
-recallss = []
-f1ss = []
+def _mean_evaluations(evaluations):
+    thrss = []
+    precss = []
+    recallss = []
+    f1ss = []
 
-for k,v in evaluations.items():
-    imgs_prec_rec = v['samples']        
-    thresholds = [ vv['threshold'] for vv in imgs_prec_rec]
-    precisions = [ vv['precision'] for vv in imgs_prec_rec]
-    recalls = [ vv['recall'] for vv in imgs_prec_rec]
-    f1s = [ vv['f1'] for vv in imgs_prec_rec]
+    for k,v in evaluations.items():
+        imgs_prec_rec = v['samples']        
+        thresholds = [ vv['threshold'] for vv in imgs_prec_rec]
+        precisions = [ vv['precision'] for vv in imgs_prec_rec]
+        recalls = [ vv['recall'] for vv in imgs_prec_rec]
+        f1s = [ vv['f1'] for vv in imgs_prec_rec]
+
+        thrss.append(thresholds)
+        precss.append(precisions)
+        recallss.append(recalls)
+        f1ss.append(f1s)
+
+
+    mean_precisions =np.nanmean(precss,axis=0) 
+    mean_recalls = np.nanmean(recallss,axis=0)
+    mean_f1s = [f1(p,r) for p,r in zip(mean_precisions,mean_recalls)] 
+    thresholds = np.mean(thrss,axis=0)
     
-    thrss.append(thresholds)
-    precss.append(precisions)
-    recallss.append(recalls)
-    f1ss.append(f1s)
-    
+    return {
+        'mean_precisions':mean_precisions,
+        'mean_recalls':mean_recalls,
+        'mean_f1s':mean_f1s,
+        'thresholds':thresholds
+    }
 
-mp =np.nanmean(precss,axis=0) 
-rc = np.nanmean(recallss,axis=0)
-mf1 = [f1(p,r) for p,r in zip(mp,rc)] 
-mthrs = np.mean(thrss,axis=0)
+def _extract_best_results(mean_evaluations):
+    best_id = np.argmax(mean_evaluations['mean_f1s'])
 
-
-best_id = np.argmax(mf1)
-
-best_res = {
-    "f1":mf1[best_id],
-    "threshold" : mthrs[best_id],
-    "precision" : mp[best_id],
-    "recall": rc[best_id],
-}
-
-res_logger  =_setup_logger('results',path = f'../training_arguments_with_results.log')
-res_logger.info(f"{ {'args':args_dict, 'best':best_res} }")
+    return {
+        "f1":mean_evaluations['mean_f1s'][best_id],
+        "threshold" : mean_evaluations['thresholds'][best_id],
+        "precision" : mean_evaluations['mean_precisions'][best_id],
+        "recall": mean_evaluations['mean_recalls'][best_id],
+    }
 
 
-def _plot_f1_background(ax):
-    nn=100
+
+def _plot_f1_background(ax,nn=100):
     x = np.linspace(0, 1, nn)
     y = np.linspace(0, 1, nn)
     xv, yv = np.meshgrid(x, y)
@@ -894,11 +964,16 @@ def _plot_f1_background(ax):
     f1_grid = (f1_nn.reshape((nn,nn)) % .1) > .05
     ax.imshow(f1_grid,alpha = .1,cmap='gray', extent=[0,1,1,0])
 
-def plot_precision_recall_curve(precs,recs,f1s,thresholds,ax = None):
+def plot_precision_recall_curve(mean_evaluations,ax = None):
     if ax is None:
         _,ax = plt.subplots(1,1)
     
     _plot_f1_background(ax)
+    
+    f1s = mean_evaluations['mean_f1s']
+    thresholds =  mean_evaluations['thresholds']
+    precs = mean_evaluations['mean_precisions']
+    recs = mean_evaluations['mean_recalls']
     
     ax.plot(recs, precs)
     ax.set_title("Precision/Recall Chart")
@@ -916,28 +991,89 @@ def plot_precision_recall_curve(precs,recs,f1s,thresholds,ax = None):
         #ax.plot([rec],[prec],'x',label=)
         ax.text(rec,prec,lbl)
         
+def evaluate_and_save(model,eval_root,test_targets,crop_size):
+    eval_root.mkdir(exist_ok=True,parents=True)
+    
+    evaluations = evaluate_model(model,test_targets,crop_size)
+    
+    mean_evaluations = _mean_evaluations(evaluations)
+    
+    best_res = _extract_best_results(mean_evaluations)
+    save_evaluations(eval_root,evaluations ,loss_dict = None)
+    
+    plot_precision_recall_curve(mean_evaluations)
+
+    plt.savefig(eval_root/'all_prec_rec_curve.png')
+    
+    json.dump(best_res, open(eval_root/'best_results.json','w'))
+    return evaluations
+
+
+class EpochModelEvaluator:
+    
+    def __init__(
+        self,
+        targets, 
+        eval_root,
+        crop_size,
+        evaluate_every_nth_epoch = 5,
+        evaluate_after_nth_epoch = 10
+    ):
+        logger.warning("logging too soon")
+        self.targets = targets
+        self.eval_root = eval_root
+        self.crop_size = crop_size
+        
+        self.nth_epoch = evaluate_every_nth_epoch
+        self.after_epoch = evaluate_after_nth_epoch
+    
+    def evaluate_on_epoch(self, model, epoch):
+        if epoch < self.after_epoch or epoch % self.nth_epoch != 0:
+            return
+        
+        eval_path = self.eval_root/f'epoch_{epoch}'
+        eval_path.mkdir(exist_ok=True,parents=True)
+        
+        model_path = eval_path /'model.torch'
+        torch.save(model,model_path)
+        
+        evaluate_and_save(
+            model,
+            eval_path,
+            self.targets,
+            self.crop_size
+        )
+        plt.close()
+        
 
 ```
 
 ```python
-save_evaluations(eval_root,evaluations ,loss_dict = None)
+denoise_targets = [ {'img':den}  for den in denoised_imgs]
+final_targets = segmentation_targets + denoise_targets
 ```
 
 ```python
-plot_precision_recall_curve(
-    mp,
-    rc,
-    mf1,
-    mthrs
-)
-
-plt.savefig(eval_root/'all_prec_rec_curve.png')
+eval_root,loss_dict = run_w_config(
+    args_dict,
+    final_targets,
+    test_targets,
+    result_root,
+    patience=train_params['patience'],
+    repeat=50
+) 
 ```
 
 ```python
+model = torch.load(eval_root/'model-best.torch')
+
 json.dump({ k:str(v) for k,v in train_params.items()}, open(eval_root/'train_params.json','w'))
-```
 
-```python
+eval_path = eval_root/'best'
+eval_path.mkdir(parents=True,exist_ok=True)
+evaluations = evaluate_and_save(model,eval_path,test_targets,train_params['crop_size'])
 
+mean_evaluations = _mean_evaluations(evaluations)
+best_res = _extract_best_results(mean_evaluations)
+res_logger.info(f"{ {'args':args_dict, 'best':best_res} }")
 ```
