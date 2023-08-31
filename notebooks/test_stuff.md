@@ -348,9 +348,6 @@ def prepare_train_val_dataset(
     val_count = int(total_dataset_len * val_size)
     train_count = total_dataset_len -  val_count 
     
-    
-    
-        
     train_dataset = Dataset(
         index_list_by_list(images,train_idc) ,
         index_list_by_list(labels,train_idc),
@@ -762,6 +759,7 @@ args_dict={
 
 ```python
 import json
+import matplotlib.pyplot as plt
 import precipitates.visualization as vis
 
 import precipitates.evaluation as ev
@@ -908,9 +906,6 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-import json
-import matplotlib.pyplot as plt
-
 
 def _mean_evaluations(evaluations):
     thrss = []
@@ -1016,10 +1011,9 @@ class EpochModelEvaluator:
         targets, 
         eval_root,
         crop_size,
-        evaluate_every_nth_epoch = 5,
+        evaluate_every_nth_epoch = 30,
         evaluate_after_nth_epoch = 10
     ):
-        logger.warning("logging too soon")
         self.targets = targets
         self.eval_root = eval_root
         self.crop_size = crop_size
@@ -1030,6 +1024,8 @@ class EpochModelEvaluator:
     def evaluate_on_epoch(self, model, epoch):
         if epoch < self.after_epoch or epoch % self.nth_epoch != 0:
             return
+        
+        logger.info(f"Evaluating on {epoch=}")
         
         eval_path = self.eval_root/f'epoch_{epoch}'
         eval_path.mkdir(exist_ok=True,parents=True)
