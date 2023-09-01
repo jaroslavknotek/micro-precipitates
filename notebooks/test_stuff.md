@@ -87,11 +87,12 @@ train_params = {
     'unet_weight_map_separation_weight':4,
     'unet_weight_map_artifacts_weight':1,
     'patience':20,
+    'repeat': 50,
     'segmentation_dataset_path':data_root,
     'denoise_dataset_path':data_denoise_root,
     "crop_size":128,
     "val_size":.2,
-    "note":"make fair val/train splits",
+    "note":"repeat by 100",
     "augumentation_gauss_noise_val" :.02,
     "augumentation_preserve_orientation":True
 }
@@ -1011,8 +1012,8 @@ class EpochModelEvaluator:
         targets, 
         eval_root,
         crop_size,
-        evaluate_every_nth_epoch = 30,
-        evaluate_after_nth_epoch = 10
+        evaluate_every_nth_epoch = 10,
+        evaluate_after_nth_epoch = 30
     ):
         self.targets = targets
         self.eval_root = eval_root
@@ -1056,7 +1057,7 @@ eval_root,loss_dict = run_w_config(
     test_targets,
     result_root,
     patience=train_params['patience'],
-    repeat=50
+    repeat=train_params['repeat']
 ) 
 ```
 
