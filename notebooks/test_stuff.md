@@ -65,10 +65,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 import precipitates.dataset as ds
 import pathlib
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
-data_20230823_root = pathlib.Path('../data/20230911_rev/labeled/')
+data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
+data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
 
-
-data_root = data_20230823_root
+data_root = data_20230921_root
 data_denoise_root = pathlib.Path('../../delisa-all-data/')
 
 data_test_root = pathlib.Path('../data/test/')
@@ -1069,6 +1069,10 @@ evaluations = evaluate_and_save(model,eval_path,test_targets,train_params['crop_
 mean_evaluations = _mean_evaluations(evaluations)
 best_res = _extract_best_results(mean_evaluations)
 res_logger.info(f"{ {'args':args_dict, 'best':best_res} }")
+```
+
+```python
+exit()
 ```
 
 ```python
