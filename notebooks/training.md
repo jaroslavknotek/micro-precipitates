@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.6
+      jupytext_version: 1.14.5
   kernelspec:
-    display_name: torch_cv
+    display_name: computer-vision
     language: python
-    name: torch_cv
+    name: .venv
 ---
 
 ```python
@@ -566,7 +566,6 @@ def train_model(
 from types import SimpleNamespace
 
 import precipitates.dataset as ds
-import precipitates.training as training
         
 import precipitates.evaluation as evaluation
 import precipitates.visualization as visualization
