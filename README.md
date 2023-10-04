@@ -1,6 +1,10 @@
 # Identify and classifiy precipitates from SEM imagery
 ---
 
+Semantic segmentation based on [DenoiSeq](https://arxiv.org/abs/2005.02987).
+
+Added weightmaps(artifacts + closeness) to remove artifacts.
+
 # Get repository
 
 [Clone repository](https://git-scm.com/docs/git-clone) using the following command:
