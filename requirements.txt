@@ -4,10 +4,13 @@ tqdm
 imageio
 scikit-image
 scikit-learn
-tensorflow
 matplotlib
 pandas
 streamlit
 pillow
 wandb
 azure-storage-blob
+albumentations
+-f https://download.pytorch.org/whl/cu117/torch_stable.html
+torch==1.13.1+cu117
+torchvision==0.14.1+cu117

@@ -4,6 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import collections
 
+import imageio
+import json
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
 def _get_shape_color(shape_class):
     if shape_class == "shape_irregular":
         return "magenta"
@@ -115,3 +120,71 @@ def _get_shape_text(shape_class):
     else: 
         return 'Needle-like'
 
+
+def _norm(img):
+    m = np.min(img)
+    return (img - m)/(np.max(img)-m)
+
+def _save_imgs(eval_path, image_dict):
+    for k,v in image_dict.items():
+        path = eval_path/f"{k}.png" 
+        v = np.uint8(_norm(v)*255)
+        imageio.imwrite(path,v)
+    
+def _plot_loss(H):
+    fig,ax = plt.subplots(1,1)
+    ax.set_title("Training Loss on Dataset")
+    ax.set_xlabel("Epoch #")
+    ax.set_ylabel("Loss")
+
+    ax.plot(np.mean(H["train_loss"],axis=1), label="train_loss")
+    ax.plot(np.mean(H["val_loss"],axis=1), label="val_loss")
+    
+    ax.legend(loc="lower left")
+    return fig
+
+def save_evaluations(
+    eval_root,
+    evaluations,
+    loss_dict,
+    ax_figsize = 10,
+    thr = .7
+):  
+    fig = _plot_loss(loss_dict)
+    fig.savefig("loss_figure.png")
+    plt.close()
+    
+    for k,v in evaluations.items():
+        eval_path = eval_root/k
+        eval_path.mkdir(parents = True,exist_ok = True)
+        img_dict = v['images']
+        imgs = img_dict| {'pred':np.uint8(img_dict['foreground']>thr)}
+        
+        # save img
+        _save_imgs(eval_path, imgs)
+        
+        # save fig
+        fig = plot_evaluation(imgs,ax_figsize,thr = thr)
+        fig.suptitle(k)
+        fig.savefig(eval_path/f"{k}_plot.png")
+        plt.close()
+        
+        # json
+        json.dump(v['metrics'], open(eval_path/'metrics.json','w'))
+        
+        
+def plot_evaluation(img_dict,ax_figsize = 10,thr = .7):
+    n = len(img_dict)
+    fig,(axs_imgs,axs_hist) = plt.subplots(2,n,figsize=(ax_figsize*n,ax_figsize*2))
+    for ax,(k,img) in zip(axs_imgs,img_dict.items()):
+        im = ax.imshow(img,cmap='gray')
+        ax.set_title(k)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax, orientation='vertical')
+
+
+    for ax,(k,img) in zip(axs_hist,img_dict.items()):
+        ax.hist(img.flatten(),bins=100)
+        ax.set_title(k)
+    return fig

@@ -7,7 +7,7 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.14.5
   kernelspec:
-    display_name: cv
+    display_name: computer-vision
     language: python
     name: .venv
 ---

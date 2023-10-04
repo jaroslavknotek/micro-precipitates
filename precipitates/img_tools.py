@@ -100,7 +100,12 @@ def _extract_grain_mask(labels,grain_id):
     
     return grain
 
-    
+def img2crops(img, stride, shape):
+    assert len(img.shape)==2,f"Image must be 2d. Is: {len(img.shape)}"
+    slider = np.lib.stride_tricks.sliding_window_view(img,shape)
+    strider =  slider[::stride,::stride]
+    return strider.reshape((-1,*shape))[:,:,:]
+
 def _pair_grains(predicted,label,cap = 500):
     p_n, p_grains = cv2.connectedComponents(predicted)
     l_n, l_grains = cv2.connectedComponents(label)
@@ -146,7 +151,84 @@ def _print_confusion_matrix(conmat):
     df_cm = pd.DataFrame(conmat, index = ["D","ND"],columns=["D","ND"])
     sn.heatmap(df_cm, annot=True,fmt = 'd') # font size
     
-def _filter_small(img,filter_size=4):
-    size = (filter_size,filter_size)
-    kernel = np.ones(size,dtype=np.uint8)
-    return cv2.morphologyEx(img,cv2.MORPH_OPEN,kernel)
+
+def filter_small(mask,size_limit):
+    
+    if size_limit == 0:
+        return mask
+    
+    old_dtype = mask.dtype
+    mask = np.uint8(mask)
+    n,lbs = cv2.connectedComponents(mask)
+    base = np.zeros_like(mask,dtype=np.uint8)
+    for i in range(1,n):
+        component = np.uint8(lbs==i)
+        size = np.sum(component)
+        if size >= size_limit:
+            base = base | component
+    return base.astype(old_dtype)
+
+def _cut_square(img,top,left,square_size):
+    
+    h,w,*_ = img.shape
+    
+    
+    bottom = min(top+square_size,h-1)
+    top_refitted = bottom - square_size
+    
+    right = min(left+square_size,w-1)
+    left_reffited = right - square_size
+    
+    return img[top_refitted:bottom,left_reffited:right]   
+    
+def _get_stride_shape(img_shape,stride):
+    stride_shape = np.ceil(np.array(img_shape[:2])/stride)*stride//stride +1
+    return np.int32(stride_shape) 
+
+def cut_to_squares(img,square_size,stride):
+    
+    bordered_shape = np.array(img.shape[:2])-square_size
+    stride_shapes = _get_stride_shape(bordered_shape,stride)
+    
+    stride_y = (np.arange(stride_shapes[0])*stride).astype(int)
+    stride_x = (np.arange(stride_shapes[1])*stride).astype(int)
+    
+    yx = [(y,x) for y in stride_y for x in stride_x]
+    return np.array([_cut_square(img,y,x,square_size) for y,x in yx])
+    
+def decut_squares(squares,stride,orig_shape):
+    
+    square_shape = squares.shape[1:]
+    square_size = square_shape[0]
+    bordered_shape = np.array(orig_shape)-square_size
+    stride_shape = _get_stride_shape(bordered_shape,stride)
+    squares_2d = squares.reshape( (*stride_shape,*square_shape))
+    
+    base = np.zeros(orig_shape)
+    cont = np.zeros(orig_shape)
+    
+    stride_shapes = _get_stride_shape(orig_shape,stride)
+    row_strides = np.arange(stride_shapes[0]) * stride
+    col_strides = np.arange(stride_shapes[1]) * stride
+    h,w,*_ = orig_shape
+    for square_row,row_stride in zip(squares_2d,row_strides):
+        
+        for square,col_stride in zip(square_row,col_strides):
+            crop_height = min(square_size,h-row_stride)
+            crop_width = min(square_size,w-col_stride)
+            
+            h_s,w_s,*_ = square.shape
+            square_crop = square[h_s - crop_height:,w_s - crop_width:]
+            
+            base[
+                row_stride:row_stride + crop_height,
+                col_stride:col_stride+crop_width
+            ] += square_crop
+            
+            cont[
+                row_stride:row_stride + crop_height,
+                col_stride:col_stride+crop_width
+            ] += 1
+        
+    
+    return (base/cont).astype(squares.dtype)

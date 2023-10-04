@@ -17,10 +17,9 @@ setup(name='MicroPrec',
         'imageio',
         'scikit-image',
         'scikit-learn',
-        'tensorflow==2.12',
+        'torch',
         'matplotlib',
         'pandas',
         'pillow',
-        'streamlit'
     ]
 )

@@ -1,6 +1,5 @@
 # Identify and classifiy precipitates from SEM imagery
- ---
-
+---
 
 # Get repository
 
@@ -24,61 +23,29 @@ Locate into the repository
 cd micro-precipitates
 ```
 
-## Virtual environemnt
+## Setup Virtual Environemnt
 
-Create virtual environment 
-```
-python -m virtualenv .venv
-```
-
-Activate it running the following command
-
-On Linux:
-```
-. .venv/bin/activate
-```
-On Windows:
-
-```
-.venv/Scripts/Activate
-```
-
-Alternatively, use
+This repo uses `conda`.
 ```
 conda env create --name <env-name> 
 conda activate <env-name>
-```
 
-## Install dependencies
-
-**NOTE**: On Windows, there is one more step required. You need to install OpenCV. Either by using `conda install opencv` or following [this tutorial](https://docs.opencv.org/4.x/d3/d52/tutorial_windows_install.html).
-
-Once activated, install all required dependencies via
-
-```
+conda install opencv
 pip install -r requirements.txt
 ```
+# Inference
 
-# Structure
+```
+import precipitates.nnet as nnet
+import precipitates.dataset as ds
+model = torch.load(<model-path?)
+image = ds.load_image(<img-path>)
 
-TODO
+res = nnet.predict(model,image)
 
-# Data
+segmentation_mask = np.uint8(res['foreground']>THR)
+```
 
-TODO assuming some folder structure
+# Training
 
-# NOTES
-
-- `setup.py` contains fixed version `2.8.0` because of bug in azure function. See [this](https://stackoverflow.com/questions/73696134/azure-how-to-deploy-a-functions-app-with-tensorflow/73704428#73704428)
-
-# DOCKER
-
-`docker build -t 8710apps.azurecr.io/precipitates/segmentation:latest -f Dockerfile .`
-
-`docker login 8710apps.azurecr.io` and use registry's admin credentials (see Access Keys panel in portal)
-
-`docker push 8710apps.azurecr.io/precipitates/segmentation:latest`
-
-Add secret manually(because it doesn't see `secrets` in portal app)
-
-- `az containerapp update -g rg-8710-department --name ca-8710 --set-env-vars "<connection string>"
+[TODO](notebooks/training.md)
