@@ -7,9 +7,9 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.14.5
   kernelspec:
-    display_name: computer-vision
+    display_name: napari_sam
     language: python
-    name: .venv
+    name: napari_sam
 ---
 
 ```python
@@ -64,16 +64,31 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 ```python
 import precipitates.dataset as ds
 import pathlib
+
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
 data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
+data_rip_tem_root = pathlib.Path('/home/jry/data/rip_tem/')
 
-data_root = data_20230921_root
-data_denoise_root = pathlib.Path('../../delisa-all-data/')
+data_root = data_rip_tem_root
 
 data_test_root = pathlib.Path('../data/test/')
 result_root = pathlib.Path('../rev-results')
 model_eval_root = pathlib.Path('../results-tmp/')
+data_denoise_root = pathlib.Path('../../delisa-all-data/')
+```
+
+```python
+sample_names = set([ path.parent.stem for path in data_root.rglob('*.png')])
+sample_names,len(sample_names)
+
+tiffs = pathlib.Path('/home/jry/downloads/NCK-images/').rglob('*.tif')
+
+denoise_candidats = np.array([img_path for img_path in tiffs if img_path.stem not in sample_names and not img_path.stem.startswith('!')])
+_,ids = np.unique([ path.stem for path in denoise_candidats],return_index=True)
+denoise_paths = denoise_candidats[ids]
+data_denoise_root = None
+
 ```
 
 ```python
@@ -99,10 +114,10 @@ train_params = {
 segmentation_targets = list(ds.get_img_dict_targets(train_params['segmentation_dataset_path']))
 test_targets = list(ds.get_img_dict_targets(data_test_root))
 
-denoise_paths = ds._filter_not_used_denoise_paths(
-    train_params['segmentation_dataset_path'],
-    train_params['denoise_dataset_path']
-)
+# denoise_paths = ds._filter_not_used_denoise_paths(
+#     train_params['segmentation_dataset_path'],
+#     train_params['denoise_dataset_path']
+# )
 
 denoised_imgs = [ds.load_image(d) for d in denoise_paths]
 data_denoised = list(zip(denoised_imgs,[None]*len(denoised_imgs)))
@@ -407,7 +422,7 @@ def _sample_ds(targets,crop_size):
         noise_val = train_params['augumentation_gauss_noise_val'],
         preserve_orientation=train_params['augumentation_preserve_orientation']
     )
-
+    
     train_dataset = Dataset(
         images,
         masks,
@@ -418,7 +433,7 @@ def _sample_ds(targets,crop_size):
     )
     
     tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
-    
+
     for t in itertools.islice( tts,0,5):
         img = t['x'][0]
         mask = t['y_segmentation'][0]
@@ -717,6 +732,7 @@ def run_w_config(
         test_targets,
         model_eval_root,
         crop_size  =args.crop_size,
+        device = device_name
     )
 
     device = torch.device(device_name)
@@ -982,10 +998,10 @@ def plot_precision_recall_curve(mean_evaluations,ax = None):
         #ax.plot([rec],[prec],'x',label=)
         ax.text(rec,prec,lbl)
         
-def evaluate_and_save(model,eval_root,test_targets,crop_size):
+def evaluate_and_save(model,eval_root,test_targets,crop_size,device = 'cuda'):
     eval_root.mkdir(exist_ok=True,parents=True)
     
-    evaluations = evaluate_model(model,test_targets,crop_size)
+    evaluations = evaluate_model(model,test_targets,crop_size,device = device)
     
     mean_evaluations = _mean_evaluations(evaluations)
     
@@ -1008,8 +1024,10 @@ class EpochModelEvaluator:
         eval_root,
         crop_size,
         evaluate_every_nth_epoch = 10,
-        evaluate_after_nth_epoch = 30
+        evaluate_after_nth_epoch = 30,
+        device = 'cuda'
     ):
+        self.device = device
         self.targets = targets
         self.eval_root = eval_root
         self.crop_size = crop_size
@@ -1033,7 +1051,8 @@ class EpochModelEvaluator:
             model,
             eval_path,
             self.targets,
-            self.crop_size
+            self.crop_size,
+            device = self.device
         )
         plt.close()
         
@@ -1052,7 +1071,8 @@ eval_root,loss_dict = run_w_config(
     test_targets,
     result_root,
     patience=train_params['patience'],
-    repeat=train_params['repeat']
+    repeat=train_params['repeat'],
+    device_name = "cuda" if torch.cuda.is_available() else "cpu"
 ) 
 ```
 
