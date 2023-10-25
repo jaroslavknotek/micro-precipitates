@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.5
+      jupytext_version: 1.14.6
   kernelspec:
-    display_name: napari_sam
+    display_name: torch_cv
     language: python
-    name: napari_sam
+    name: torch_cv
 ---
 
 ```python
@@ -68,7 +68,7 @@ import pathlib
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
 data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
-data_rip_tem_root = pathlib.Path('/home/jry/data/rip_tem/')
+data_rip_tem_root = pathlib.Path('../data/rip_tem/')
 
 data_root = data_rip_tem_root
 
@@ -79,16 +79,7 @@ data_denoise_root = pathlib.Path('../../delisa-all-data/')
 ```
 
 ```python
-sample_names = set([ path.parent.stem for path in data_root.rglob('*.png')])
-sample_names,len(sample_names)
-
-tiffs = pathlib.Path('/home/jry/downloads/NCK-images/').rglob('*.tif')
-
-denoise_candidats = np.array([img_path for img_path in tiffs if img_path.stem not in sample_names and not img_path.stem.startswith('!')])
-_,ids = np.unique([ path.stem for path in denoise_candidats],return_index=True)
-denoise_paths = denoise_candidats[ids]
-data_denoise_root = None
-
+data_denoise_root = pathlib.Path('../data/rip_denoise/')
 ```
 
 ```python
@@ -97,27 +88,41 @@ train_params = {
     'val_denoise_weight':1,
     'unet_weight_map_separation_weight':4,
     'unet_weight_map_artifacts_weight':1,
-    'patience':20,
+    'patience':30,
     'repeat': 50,
     'segmentation_dataset_path':data_root,
     'denoise_dataset_path':data_denoise_root,
     "crop_size":128,
     "val_size":.2,
     "note":"repeat by 100",
-    "augumentation_gauss_noise_val" :.02,
-    "augumentation_preserve_orientation":True
+    "augumentation_gauss_noise_val" :.01,
+    "augumentation_preserve_orientation":False
 }
 ```
 
 ```python
+test_filenames = set([
+    'M4_073_SMMAG_x400k_312',
+    'M4_053_SMMAG_x400k_312',
+    'M4_017_SMMAG_x400k_122',
+    'M4_007_SMMAG_x300k_422',
+    'M4_006_SMMAG_x300k_422'
+])
+```
 
+```python
 segmentation_targets = list(ds.get_img_dict_targets(train_params['segmentation_dataset_path']))
+
 test_targets = list(ds.get_img_dict_targets(data_test_root))
+test_targets = [se for se in segmentation_targets if se['filename'] in test_filenames]
+
+segmentation_targets = [se for se in segmentation_targets if se['filename'] not in test_filenames]
 
 # denoise_paths = ds._filter_not_used_denoise_paths(
 #     train_params['segmentation_dataset_path'],
 #     train_params['denoise_dataset_path']
 # )
+denoise_paths = data_denoise_root.glob('*.png')
 
 denoised_imgs = [ds.load_image(d) for d in denoise_paths]
 data_denoised = list(zip(denoised_imgs,[None]*len(denoised_imgs)))
@@ -1072,7 +1077,7 @@ eval_root,loss_dict = run_w_config(
     result_root,
     patience=train_params['patience'],
     repeat=train_params['repeat'],
-    device_name = "cuda" if torch.cuda.is_available() else "cpu"
+    device_name = device.type
 ) 
 ```
 
