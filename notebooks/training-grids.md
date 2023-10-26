@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.5
+      jupytext_version: 1.14.6
   kernelspec:
-    display_name: napari_sam
+    display_name: torch_cv
     language: python
-    name: napari_sam
+    name: torch_cv
 ---
 
 ```python
@@ -69,9 +69,9 @@ data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
 data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
 
-data_root = pathlib.Path( '/home/jry/data/spacer_grids/labeled')
-data_denoise_root = pathlib.Path( '/home/jry/data/spacer_grids/not_labeled')
-data_test_root = pathlib.Path( '/home/jry/data/spacer_grids/test')
+data_root = pathlib.Path( '../../spacer_grids/labeled')
+data_denoise_root = pathlib.Path( '../../spacer_grids/not_labeled')
+data_test_root = pathlib.Path( '../../spacer_grids/test')
 
 result_root = pathlib.Path('../rev-results')
 model_eval_root = pathlib.Path('../results-tmp/')
@@ -79,18 +79,18 @@ model_eval_root = pathlib.Path('../results-tmp/')
 
 ```python
 train_params = {
-    'train_denoise_weight':1,
-    'val_denoise_weight':1,
-    'unet_weight_map_separation_weight':4,
-    'unet_weight_map_artifacts_weight':1,
+    'train_denoise_weight':.1,
+    'val_denoise_weight':.1,
+    'unet_weight_map_separation_weight':0,
+    'unet_weight_map_artifacts_weight':0,
     'patience':20,
-    'repeat': 5,
+    'repeat': 50,
     'segmentation_dataset_path':data_root,
     'denoise_dataset_path':data_denoise_root,
     "crop_size":128,
-    "val_size":.2,
-    "note":"repeat by 100",
-    "augumentation_gauss_noise_val" :.001,
+    "val_size":.4,
+    "note":"denoise weight + add noise",
+    "augumentation_gauss_noise_val" :.005,
     "augumentation_preserve_orientation":True
 }
 ```
@@ -154,7 +154,7 @@ def batch_fair(is_denoise,batch_size):
     denoised = _resize_to_shape_fill_with_random(denoise_idx,batch_size)
     segmentation = _resize_to_shape_fill_with_random(segmantation_idx,batch_size)
 
-    return np.vstack([denoised,segmentation])
+    return np.vstack([denoised,segmentation]).astype(int)
 
 def _resize_to_shape_fill_with_random(arr,shape_y):
     n = len(arr)
@@ -225,12 +225,12 @@ class Dataset(torch.utils.data.Dataset):
         labels,
         crop_size,
         transform,
-        weight_maps=None, 
+        artifact_weight_maps=None, 
         repeat = 1
     ):
         self.images = images
         self.labels = labels
-        self.weight_maps = weight_maps
+        self.artifact_weight_maps = artifact_weight_maps
         
         self.transform = transform
         self.crop_size = crop_size
@@ -247,8 +247,8 @@ class Dataset(torch.utils.data.Dataset):
         image = self.images[idx]
         label = self.labels[idx]
         
-        if self.weight_maps is not None:
-            art_weight_map = self.weight_maps[idx]
+        if self.artifact_weight_maps is not None:
+            art_weight_map = self.artifact_weight_maps[idx]
         else :
             art_weight_map = None
             
@@ -281,7 +281,7 @@ class Dataset(torch.utils.data.Dataset):
         sep_weight = train_params['unet_weight_map_separation_weight']
         
         if sep_weight == 0:
-            sep_weight_map = np.ones(weight_map.shape)
+            sep_weight_map = np.ones(art_weight_map.shape)
         else:
             wc = {
                 0: 1, # background
@@ -312,7 +312,7 @@ def prepare_train_val_dataset(
     images,
     labels,
     crop_size,
-    weight_maps = None,
+    artifact_weight_maps = None,
     val_size = .2,
     batch_size = 32,
     repeat = 1
@@ -324,9 +324,9 @@ def prepare_train_val_dataset(
         preserve_orientation=train_params['augumentation_preserve_orientation']
     )
     
-    if weight_maps is None:
-        weight_maps = [None]*len(images)
-        
+    if artifact_weight_maps is None:
+        artifact_weight_maps = [None]*len(images)
+    
     train_idc, val_idc = fair_split_train_val_indices_to_batches(
         labels,
         batch_size,
@@ -342,7 +342,7 @@ def prepare_train_val_dataset(
         index_list_by_list(labels,train_idc),
         crop_size,
         train_t,
-        weight_maps = index_list_by_list(weight_maps,train_idc),
+        artifact_weight_maps = index_list_by_list(artifact_weight_maps,train_idc),
         repeat=repeat
     )
     # Don't shufle when using fair split
@@ -353,7 +353,7 @@ def prepare_train_val_dataset(
         index_list_by_list(labels,val_idc),
         crop_size,
         val_t,
-        weight_maps = index_list_by_list(weight_maps,val_idc),
+        artifact_weight_maps = index_list_by_list(artifact_weight_maps,val_idc),
         repeat=repeat
     )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -385,14 +385,14 @@ def to_weight_map(a):
     
     return a + 1
 
-def _sample_ds(targets,crop_size):
+def _sample_ds(targets,crop_size,use_weightmaps = True):
     images = []
     masks = []
-    weight_maps = []
+    artifact_weight_maps = []
     for t in targets:
         images.append(t['img'])
         masks.append(to_mask(t.get('mask',None)))
-        weight_maps.append(to_weight_map(t.get('weightmap',None))) 
+        artifact_weight_maps.append(to_weight_map(t.get('weightmap',None))) 
         
     train_t,val_t = get_train_val_augumentation(
         crop_size,
@@ -405,23 +405,25 @@ def _sample_ds(targets,crop_size):
         masks,
         crop_size,
         train_t,
-        weight_maps = weight_maps,
-        repeat=50
+        artifact_weight_maps= artifact_weight_maps,
+        repeat=1
     )
     
     tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
-    
+    items = []
     for t in itertools.islice( tts,0,5):
         img = t['x'][0]
         mask = t['y_segmentation'][0]
-        wm = np.squeeze(t['weight_map'])
-        
-        plot_img_row([img,mask,wm])
-        
+        borders = t['y_segmentation'][2]
+        wm = np.squeeze(t['weight_map'])       
+        plot_img_row([img,mask,borders,wm])
+        items.append(t)
+    return items
+
 denoise_targets = [ {'img':den}  for den in denoised_imgs]
 final_targets = segmentation_targets + denoise_targets
 
-_sample_ds(final_targets,128)
+_=_sample_ds(final_targets,128)
 ```
 
 # Training
@@ -633,7 +635,7 @@ def _train_run(
         images,
         masks,
         args.crop_size,
-        weight_maps = weight_maps,
+        artifact_weight_maps = weight_maps,
         repeat = repeat,
         val_size = train_params['val_size']
     )
@@ -746,6 +748,372 @@ args_dict={
 ```
 
 ```python
+def angle_between(v1, v2, deg=True):
+    """
+    Author: Jan Palasek
+    Computes angle between two vectors.
+    Args:
+        v1: First vector. Shape of the vector must be (2,).
+        v2: Second vector. Shape of the vector must be (2,).
+        deg: If True, return angle in degrees. If False, then the angle will be returned in radians.
+
+    Returns: Angle in degrees (-180, 180] or radians.
+
+    """
+    dot = np.dot(v1, v2)
+    det = np.cross(v1, v2)
+
+    angle = np.arctan2(det, dot)
+
+    if deg:
+        angle = np.rad2deg(angle)
+
+    return angle
+
+
+def perform_refinement_walk(mask):
+    """
+    author: Jan Palasek
+    Performs walk on the border between black/white components.
+    Args:
+        mask: Mask to perform walk on.
+
+    Returns: List of coordinates (tuples (height, width)) of the performed path and list of pixels from which the algorithm
+    couldn't go further (= graph bridges).
+
+    """
+    mask_height, mask_width = mask.shape
+    max_val = np.max(mask)
+
+    # find out pixel that are
+    first_height = None
+    for h in range(mask_height - 1):
+        if mask[h, 0] == 0 and mask[h + 1, 0] > 0:
+            first_height = h
+            break
+
+    assert first_height is not None
+
+    h, w = first_height, 0
+    stack = []
+    opened = []
+    closed = set()
+    stack.append((h, w))
+    while True:
+        h, w = stack[-1]
+
+        # if you are at the end of the image, quit
+        if w == mask_width - 1:
+            opened.append((h, w))
+            break
+
+        # if (h, w) is in closed vertices , ignore it
+        # this can happen because we add vertices without checking whether it's already in the stack
+        if (h, w) in closed:
+            del stack[-1]
+            continue
+
+        # if (h, w) is in opened vertices (every its child has been closed already and this vertex is about to be opened again), close it
+        if (h, w) in opened:
+            del stack[-1]
+
+            assert opened[-1] == (h, w), f"{opened[-1]} is not equal to {(h, w)}"
+            del opened[-1]
+
+            closed.add((h, w))
+            continue
+
+        if len(opened) > 0:
+            prev_h, prev_w = opened[-1]
+        else:
+            prev_h, prev_w = (h, w)
+        prev_direction = (h - prev_h, w - prev_w)
+
+        # otherwise add it to opened vertices
+        opened.append((h, w))
+
+        # find next pixel that neighbours white pixel
+        # the highest priority is to go to the most right pixel considering what direction we have atm
+        # this forces algorithm to explore all possible connected black peaks
+        ordered_next_pixels = np.array([
+            (h, w - 1), (h + 1, w - 1), (h - 1, w - 1),
+            (h + 1, w), (h - 1, w),
+            (h, w + 1), (h + 1, w + 1), (h - 1, w + 1)
+        ])
+        next_directions = [(next_h - h, next_w - w) for next_h, next_w in ordered_next_pixels]
+        next_angles = np.array([angle_between(prev_direction, direction) for direction in next_directions])
+        sorted_idx = np.argsort(-next_angles)
+
+        ordered_next_pixels = ordered_next_pixels[sorted_idx]
+
+        for next_h, next_w in ordered_next_pixels:
+            # invalid coordinates => ignore
+            if not (0 <= next_h < mask_height and 0 <= next_w < mask_width):
+                continue
+
+            # if the new vertex has already been opened or closed, ignore it
+            if (next_h, next_w) in opened or (next_h, next_w) in closed:
+                continue
+
+            if mask[next_h, next_w] == 0 and any_neighbour_has_val(mask, next_h, next_w, val=max_val):
+                stack.append((next_h, next_w))
+
+    return opened, closed
+
+def clear_invalid_black_pixels( mask):
+    
+    mask = mask.copy()
+    val = np.max(mask)
+    _, bridge_pixels = perform_refinement_walk(mask)
+
+    for h, w in bridge_pixels:
+        mask[h, w] = val
+    return mask
+
+        
+def match_problem_points_to_peak_idx(problem_idx, all_peaks_idx):
+    """
+    Matches problem index into a interval made by nearest peaks.
+
+    Args:
+        problem_idx: Indices (width) denoting problems.
+        all_peaks_idx: Valid peaks.
+
+    Returns:
+
+    """
+
+    problem_intervals = []
+    # for each problem point, find closest interval surrounding it
+    for idx in problem_idx:
+        # find closest left peak to idx
+        left_peak_idx = all_peaks_idx[np.where(all_peaks_idx < idx)]
+        left_dist = np.abs(idx - left_peak_idx)
+        left_peak = left_peak_idx[np.where(left_dist == np.min(left_dist))][0]
+
+        # find closest right peak to idx
+        right_peak_idx = all_peaks_idx[np.where(idx < all_peaks_idx)]
+
+        right_dist = np.abs(idx - right_peak_idx)
+        right_peak = right_peak_idx[np.where(right_dist == np.min(right_dist))][0]
+
+        problem_intervals.append((left_peak, right_peak))
+    return problem_intervals
+    
+    
+def remove_stains_half(mask: np.ndarray):
+# """
+#    Author: Jan Palasek
+#     This postprocessor splits the images horizontally and postprocesses two result parts separately:
+#     upper part of the grid + rods and lower part of the grid + rods.
+
+#     The goal of this postprocessor is to remove so called "stains". Stain is defined as an independent component that
+#     is not largest or the second largest in the horizontally split mask.
+
+#     There are two types of stains: white stain on the black background and black stain on the white background.
+#     This postprocessor removes both kinds.
+# """        
+    # find 2 largest components - rods are black, grids are white
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    component_sizes = stats[:, -1]
+    sort_ind = np.argsort(-component_sizes)[:2]
+
+    # set every other component's (not the two largest ones) pixels value as black
+    # note that every black pixel is considered as background by cv2 and thus handled as one component
+    mask[(labels != sort_ind[0]) & (labels != sort_ind[1])] = 0
+
+    # invert colors - to remove black stains too
+    mask = cv2.bitwise_not(mask)
+
+    # find 2 largest components - rods are white, grids are black
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    component_sizes = stats[:, -1]
+    sort_ind = np.argsort(-component_sizes)[:2]
+
+    # set every other than 2 largest component's pixel value as black
+    mask[(labels != sort_ind[0]) & (labels != sort_ind[1])] = 0
+
+    # invert pixels back
+    return cv2.bitwise_not(mask)
+
+def split_by_mass(mask):
+    y_profile = np.sum(mask, axis=1)
+    area = np.sum(y_profile)
+    cum = y_profile*np.arange(len(y_profile))
+    mid = int(np.sum(cum)/area)
+    
+    mask_top = mask[:mid]
+    mask_bottom = mask[mid:]
+    
+    return mask_top,mask_bottom
+
+def any_neighbour_has_val(mask: np.ndarray, h, w, val):
+    """
+    Reports whether the pixel on cordinates (h, w) has any neighbour (4-connectivity) with a specified value.
+    Args:
+        mask: Mask. Every pixel must be 0 or 255.
+        h: Height of the coordinate.
+        w: Width of the coordinate.
+        val: Value to find.
+
+    Returns:
+
+    """
+    if h - 1 >= 0 and mask[h - 1, w] == val:
+        return True
+    if h + 1 < mask.shape[0] and mask[h + 1, w] == val:
+        return True
+    if w - 1 >= 0 and mask[h, w - 1] == val:
+        return True
+    if w + 1 < mask.shape[1] and mask[h, w + 1] == val:
+        return True
+
+    return False
+
+
+
+def _perform_safe(fn,mask):
+    try:
+        # plt.imshow(mask)
+        # plt.title('before')
+        res = fn(mask)
+        # plt.show()
+        # plt.imshow(res)
+        # plt.title('after')
+        # plt.show()
+        return res
+    except Exception as e:
+        logger.exception(e)
+        return mask
+            
+def refine_mask_prediction(prediction,assume_full_mask = True,threshold = .4):
+    # assume_full_mask - If true, algorithm assumes that the prediction is based on a picture of full mask 
+    # (has top, bottom and spans from left to right). Meaning that top and bottom line of prediction should be zero
+    # and middle should be uninterupted rod of ones
+    
+    if prediction.dtype == np.uint8 or np.max(prediction) >1:
+        prediction = np.float32(prediction)/255
+    
+    mask = np.where(prediction>threshold,1,0).astype(np.uint8)
+    
+    mask_top,mask_bottom_teeth_down = split_by_mass(mask)
+    # flip mask so it can be processed as the top mask
+    mask_bottom = np.flip(mask_bottom_teeth_down,axis=0)
+    
+    masks = [mask_top,mask_bottom]
+    
+    #masks is assumed to be left to right, adding artificial prediction
+    if assume_full_mask:
+        for mask in masks:
+            mask[-10:] = 1
+            mask[0] = 0
+
+    masks_no_stains = [_perform_safe(remove_stains_half,mask_half) for mask_half in masks]
+    masks_no_invalid = [_perform_safe(clear_invalid_black_pixels,mask_half) for mask_half in masks_no_stains]
+    
+    # remove stains
+    
+    # walk the teeths
+    mask_done_top,mask_done_bottom = masks_no_invalid
+    mask_done_bottom_up = np.flip(mask_done_bottom,axis=0)
+    return np.vstack([mask_done_top,mask_done_bottom_up])
+```
+
+```python
+import itertools
+
+def calculate_line_distance(y_true: np.ndarray, y_pred: np.ndarray, cut_sides = True):
+    """
+    # Author Jan Palasek
+    Computes Line Distance Metric. Performs walk on the border of black and white region for lower and
+    upper half for both true and prediction and calculates maximum error on height axis. The input
+    prediction MUST be cleaned.
+
+    Args:
+        y_true: Shape of (height, width).
+        y_pred: Shape of (height, width). Must be cleaned (no stains).
+
+    Returns: Maximum distance from prediction to the true (judged by height).
+
+    """
+    assert y_true.shape == y_pred.shape
+    
+    if cut_sides:
+        cut_10p = y_true.shape[1]//10
+        y_true =y_true[:,cut_10p:-cut_10p]
+        y_pred =y_pred[:,cut_10p:-cut_10p]
+    
+    # ensure it's the same type
+    y_true = (y_true > 0).astype(np.uint8)
+    y_pred = (y_pred > 0).astype(np.uint8)
+
+    y_true = np.squeeze(y_true)
+    y_pred = np.squeeze(y_pred)
+
+    upper_half_true , lower_half_true = split_by_mass(y_true)
+    upper_half_pred , lower_half_pred = y_pred[:upper_half_true.shape[0]], y_pred[upper_half_true.shape[0]:]
+    lower_half_true, lower_half_pred = np.flip(lower_half_true, axis=0), np.flip(lower_half_pred, axis=0)
+
+    try:
+        error_lower = np.max(_line_distances_metric_half(lower_half_true, lower_half_pred))
+    except Exception as e:
+        logger.exception(e)
+        error_lower = np.inf
+    try:
+        error_upper = np.max(_line_distances_metric_half(upper_half_true, upper_half_pred))
+    except Exception as e:
+        logger.exception(e)
+        error_upper = np.inf
+
+    return np.maximum(error_lower, error_upper)
+
+
+def _line_distances_metric_half(y_true, y_pred):
+    # Author Jan Palasek
+    """
+    Calculates line distances of true from predicted. The distance is a height-distance.
+    Args:
+        y_true: True mask of shape (image_height, image_width). The values must be 0 or 255.
+        y_pred: Prediction of shape (height, width). The values must be 0 or 255.
+
+    Returns: Array of shape (height,), where on every coordinate there is an absolute distance of predicted crossing (curve defining crossing of a predicted mask and a true mask)
+    and true crossing.
+
+    """
+    true_walk_coordinates,_ = perform_refinement_walk(y_true)
+    pred_walk_coordinates,_ = perform_refinement_walk(y_pred)
+
+    return _line_distances_metric_half_from_coords(
+        true_walk_coordinates, 
+        pred_walk_coordinates
+    )
+
+def _line_distances_metric_half_from_coords(true_walk_coordinates, pred_walk_coordinates):
+    # Author Jan Palasek
+    pred_walk_coordinates = sorted(pred_walk_coordinates, key=lambda x: x[1])
+    true_walk_coordinates = sorted(true_walk_coordinates, key=lambda x: x[1])
+
+    errors = []
+
+    f = lambda x: x[1]
+    for (k_pred, val_pred), (k_true, val_true) in zip(itertools.groupby(sorted(pred_walk_coordinates, key=f), f),
+                                                      itertools.groupby(sorted(true_walk_coordinates, key=f), f)):
+        pred_h = np.array(list(x[0] for x in val_pred))
+        true_h = np.array(list(x[0] for x in val_true))
+
+        error = []
+        for h in pred_h:
+            error.append(np.max(np.abs(h - true_h)))
+        error = np.max(error)
+
+        errors.append(error)
+
+    return np.array(errors)
+
+
+```
+
+```python
 import json
 import matplotlib.pyplot as plt
 import precipitates.visualization as vis
@@ -768,86 +1136,66 @@ def _threshold_foreground(foreground,thr):
     p[foreground>=thr] = 1
     return np.uint8(p)
 
-def f1(precision, recall):
-    if precision + recall ==0:
-        return np.nan
-    return 2*(precision * recall)/(precision + recall)
-
-def _calc_prec_rec_from_pred(y,p):    
-
-    if (p == 1).all():
-        return (0,1)
-    elif (p == 0).all():
-        return (1,0)
-    
-    y = np.uint8(y)
-    df,_,_ = ev.match_precipitates(p,y)
-    return ev._prec_rec(df)
-
-def sample_precision_recall(ground_truth,foreground,thresholds):
-    
-    thr_imgs = [
-        _threshold_foreground(foreground,thr) 
-        for thr in thresholds
-    ]
-        
-    precs_recs = [
-        _calc_prec_rec_from_pred(ground_truth,img) 
-        for img in thr_imgs
-    ]
-    pr = np.array(precs_recs)
-    precs, recs = pr[np.argsort(pr[:,0])].T
-    f1s = np.array([f1(prec,rec)  for prec,rec in zip(precs,recs)])
-    
-    return thr_imgs,precs,recs,f1s
-
-def evaluate_model(
-    model,
-    test_targets,
-    crop_size,
-    device='cuda'
-):  
-    
-    thr_low = .4
-    thr_high = .8
-    n = 5
-    thresholds = np.concatenate([
-        [0.0],
-        np.linspace(thr_low,thr_high,n),
-        [1.0]
-    ])
-    
+def evaluate_predictions(predictions,threshold = .5,notify_progress = False):          
     evaluations = {}
-    for target in test_targets:
-        name = target['filename']
-        test_x = target['img']
-        test_y = np.uint8(target['mask']>0)
+    for name,record in tqdm(predictions.items(),disable = not notify_progress):
         
-        img_dict = nnet.predict(model,test_x,crop_size,device=device)
-        img_dict['y'] = np.uint8(test_y>0)     
+        foreground = record['foreground']
+        y = record['y']
+        t,b = split_by_mass(y)
+        mask_halfs = [t,np.flip(b,axis=0)]
+        t_no_stain,b_no_stains = [_perform_safe(remove_stains_half,mask_half) for mask_half in mask_halfs]
+        y=np.vstack([t_no_stain,np.flip(b_no_stains,axis=0)])
         
-        logger.info(f"Sampling precision recall ({len(thresholds)})")
-        thr_imgs,precs,recs,f1s = sample_precision_recall(
-            img_dict['y'],
-            img_dict['foreground'],
-            thresholds
-        )
+        samples = []
+        images = []
         
-        imgs_prec_rec = [
-            {
-                "precision":p,
-                "recall":r,
-                "f1":f,
-                "threshold":t
-            }
-            for p,r,f,t in zip(precs,recs,f1s,thresholds)
-        ]
+        clear = refine_mask_prediction(foreground,threshold = threshold)
+        ld = calculate_line_distance(y,clear)
         
-        evaluations.setdefault(name,{})['samples'] = imgs_prec_rec
-        evaluations.setdefault(name,{})['images'] = img_dict
+        evaluations.setdefault(name,{})['metrics'] = {'line_distance':ld,'threshold':threshold}
+        evaluations.setdefault(name,{})['image'] = clear
         
     return evaluations
 
+      
+def _collect_predictions(model,targets,crop_size,device='cuda',notify_progress = False):
+    predictions = {}
+    for target in tqdm(test_targets,disable = not notify_progress):
+        name = target['filename']
+        test_x = target['img']
+        test_y = np.uint8(target['mask']>0)
+        img_dict = nnet.predict(model,test_x,crop_size,device=device)
+        img_dict['y'] =test_y
+        predictions[target['filename']] = img_dict
+        
+    return predictions
+        
+```
+
+```python
+
+def _try_eval():
+    model = torch.load('../rev-results/20231025215432-crop_size=128-cnn_depth=5-loss=fl-train_loss_denoise_weight=0-val_loss_denoise_weight=0-cnn_filters=8/epoch_70/model.torch')
+    predictions  = _collect_predictions(model,test_targets,args_dict['crop_size'],notify_progress = True)
+    evaluations = evaluate_predictions(predictions,notify_progress = True)
+
+    c = 4
+    for name,evaluation in evaluations.items():
+        fig,ax = plt.subplots(1,1,figsize = (c,c))
+        image = evaluation['image']
+        ax.imshow(image)
+        metrics = evaluation['metrics']
+        thr = metrics['threshold']
+        line_distance = metrics['line_distance']
+        ax.set_title(f"{thr:.2f} - {line_distance}")
+        plt.show()
+        
+# _try_eval()
+```
+
+```python
+import imageio
 
 def save_evaluations(
     eval_root,
@@ -860,29 +1208,27 @@ def save_evaluations(
         fig.savefig(eval_root/"loss_figure.png")
         plt.close()
     
-    for k,v in evaluations.items():
+    distances=  np.array([ v['metrics']['line_distance'] for v in evaluations.values()])
+    valid = distances[~np.isinf(distances)]
+    mean_distance = np.mean(valid)
+    json.dump({'line_distance':mean_distance}, open(eval_root/'avg_metrics.json','w'), cls=NpEncoder)
+    
+    for k,evaluation in evaluations.items():
         eval_path = eval_root/k
         eval_path.mkdir(parents = True,exist_ok = True)
-        img_dict = v['images']
-        
-        thresholds = [ vv['threshold'] for vv in v['samples']]
-        
-        imgs = img_dict | {
-            f"pred_{thr:.2}":np.uint8(img_dict['foreground']>thr) 
-            for thr in thresholds
-        }
-        
-        # save img
-        vis._save_imgs(eval_path, imgs)
-                
-        # save fig
-        fig = vis.plot_evaluation(imgs,ax_figsize)
-        fig.suptitle(k)
-        fig.savefig(eval_path/f"{k}_plot.png")
-        plt.close()
-        
+
+        image = evaluation['image']
+        imageio.imwrite(eval_path/'grid_mask.png', image*255)
         # json
-        json.dump(v['samples'], open(eval_path/'samples.json','w'), cls=NpEncoder)
+        
+        ld = evaluation['metrics']['line_distance']
+        if np.isinf(ld):
+            evaluation['metrics']['line_distance'] = None
+        json.dump(evaluation['metrics'], open(eval_path/'metrics.json','w'), cls=NpEncoder)
+        
+    
+    
+        
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -894,106 +1240,19 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
-
-def _mean_evaluations(evaluations):
-    thrss = []
-    precss = []
-    recallss = []
-    f1ss = []
-
-    for k,v in evaluations.items():
-        imgs_prec_rec = v['samples']        
-        thresholds = [ vv['threshold'] for vv in imgs_prec_rec]
-        precisions = [ vv['precision'] for vv in imgs_prec_rec]
-        recalls = [ vv['recall'] for vv in imgs_prec_rec]
-        f1s = [ vv['f1'] for vv in imgs_prec_rec]
-
-        thrss.append(thresholds)
-        precss.append(precisions)
-        recallss.append(recalls)
-        f1ss.append(f1s)
-
-
-    mean_precisions =np.nanmean(precss,axis=0) 
-    mean_recalls = np.nanmean(recallss,axis=0)
-    mean_f1s = [f1(p,r) for p,r in zip(mean_precisions,mean_recalls)] 
-    thresholds = np.mean(thrss,axis=0)
-    
-    return {
-        'mean_precisions':mean_precisions,
-        'mean_recalls':mean_recalls,
-        'mean_f1s':mean_f1s,
-        'thresholds':thresholds
-    }
-
-def _extract_best_results(mean_evaluations):
-    best_id = np.argmax(mean_evaluations['mean_f1s'])
-
-    return {
-        "f1":mean_evaluations['mean_f1s'][best_id],
-        "threshold" : mean_evaluations['thresholds'][best_id],
-        "precision" : mean_evaluations['mean_precisions'][best_id],
-        "recall": mean_evaluations['mean_recalls'][best_id],
-    }
-
-
-
-def _plot_f1_background(ax,nn=100):
-    x = np.linspace(0, 1, nn)
-    y = np.linspace(0, 1, nn)
-    xv, yv = np.meshgrid(x, y)
-
-    f1_nn = np.array([ f1(yy,xx) for yy in y for xx in x ])
-    f1_grid = (f1_nn.reshape((nn,nn)) % .1) > .05
-    ax.imshow(f1_grid,alpha = .1,cmap='gray', extent=[0,1,1,0])
-
-def plot_precision_recall_curve(mean_evaluations,ax = None):
-    if ax is None:
-        _,ax = plt.subplots(1,1)
-    
-    _plot_f1_background(ax)
-    
-    f1s = mean_evaluations['mean_f1s']
-    thresholds =  mean_evaluations['thresholds']
-    precs = mean_evaluations['mean_precisions']
-    recs = mean_evaluations['mean_recalls']
-    
-    ax.plot(recs, precs)
-    ax.set_title("Precision/Recall Chart")
-    
-    ax.set_xlabel('Recall')
-    ax.set_xlim(0,1)
-    
-    ax.set_ylabel('Precision')
-    ax.set_ylim(0,1)
-    
-    ax.axis('scaled')
-
-    for prec,rec,f1,thr in zip(precs,recs,f1s,thresholds):
-        lbl = f"$f_1$:{f1:.2} $t$:{thr:.2}"
-        #ax.plot([rec],[prec],'x',label=)
-        ax.text(rec,prec,lbl)
         
-def evaluate_and_save(model,eval_root,test_targets,crop_size):
+def evaluate_and_save(model,eval_root,test_targets,crop_size,notify_progress = False):
+    predictions  = _collect_predictions(model,test_targets,args_dict['crop_size'],notify_progress=notify_progress)
+    evaluations = evaluate_predictions(predictions,notify_progress=notify_progress)
+
     eval_root.mkdir(exist_ok=True,parents=True)
     
-    evaluations = evaluate_model(model,test_targets,crop_size)
+    save_evaluations(eval_root,evaluations ,loss_dict = None)  
     
-    mean_evaluations = _mean_evaluations(evaluations)
-    
-    best_res = _extract_best_results(mean_evaluations)
-    save_evaluations(eval_root,evaluations ,loss_dict = None)
-    
-    plot_precision_recall_curve(mean_evaluations)
-
-    plt.savefig(eval_root/'all_prec_rec_curve.png')
-    
-    json.dump(best_res, open(eval_root/'best_results.json','w'))
     return evaluations
 
 
 class EpochModelEvaluator:
-    
     def __init__(
         self,
         targets, 
@@ -1003,7 +1262,7 @@ class EpochModelEvaluator:
         evaluate_after_nth_epoch = 30
     ):
         self.targets = targets
-        self.eval_root = eval_root
+        self.eval_root = pathlib.Path(eval_root)
         self.crop_size = crop_size
         
         self.nth_epoch = evaluate_every_nth_epoch
@@ -1025,11 +1284,12 @@ class EpochModelEvaluator:
             model,
             eval_path,
             self.targets,
-            self.crop_size
+            self.crop_size,
+            notify_progress = True
         )
-        plt.close()
         
-
+# ech = EpochModelEvaluator(test_targets,"tmp", 128)
+# ech.evaluate_on_epoch(model,80)
 ```
 
 ```python
