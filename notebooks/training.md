@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.6
+      jupytext_version: 1.14.5
   kernelspec:
-    display_name: torch_cv
+    display_name: napari_sam
     language: python
-    name: torch_cv
+    name: napari_sam
 ---
 
 ```python
@@ -70,7 +70,8 @@ data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
 data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
 data_rip_tem_root = pathlib.Path('../data/rip_tem/')
 
-data_root = data_rip_tem_root
+data_root = data_20230921_root
+#data_root = data_rip_tem_root
 
 data_test_root = pathlib.Path('../data/test/')
 result_root = pathlib.Path('../rev-results')
@@ -95,8 +96,8 @@ train_params = {
     "crop_size":128,
     "val_size":.2,
     "note":"repeat by 100",
-    "augumentation_gauss_noise_val" :.01,
-    "augumentation_preserve_orientation":False
+    "augumentation_gauss_noise_val" :.002,
+    "augumentation_preserve_orientation":True
 }
 ```
 
@@ -201,6 +202,7 @@ def batch_fair(is_denoise,batch_size):
 ```
 
 ```python
+import augumentation_reshuffle as reshuffle
 import albumentations as A
 import cv2
 
@@ -208,8 +210,10 @@ def get_train_val_augumentation(
     crop_size,
     preserve_orientation = False,
     noise_val = 0,
-    interpolation=cv2.INTER_CUBIC
+    interpolation=cv2.INTER_CUBIC,
+    power = 1
 ):
+    
     crop_size_padded = int(crop_size*1.5)
     transform_list = [
         A.PadIfNeeded(crop_size_padded,crop_size_padded),
@@ -221,7 +225,14 @@ def get_train_val_augumentation(
                 alpha_affine=120 * 0.1,
                 interpolation=interpolation
             ),
-        A.RandomBrightnessContrast(p=0.5)
+        A.RandomBrightnessContrast(p=0.5),
+        A.OneOf(
+            [
+                A.Sharpen(p=1, alpha=(0.2, 0.2*power)),
+                A.Blur(blur_limit=3*power, p=1),
+            ],
+            p=0.3,
+        ),
     ]
     if noise_val > 0:
         transform_list.append(
@@ -274,23 +285,34 @@ class Dataset(torch.utils.data.Dataset):
         idx = idx % len(self.images)
         image = self.images[idx]
         label = self.labels[idx]
-        
-        if self.weight_maps is not None:
-            art_weight_map = self.weight_maps[idx]
-        else :
-            art_weight_map = None
+
+        if np.random.rand() > .3 and label is not None:
+            # assert np.sum(label)>0
+            image,label = reshuffle.synthetize_precipitates(np.float32(image),np.uint8(label))
+            image = np.float32(image)
+            label = np.float32(label)
+
+        art_weight_map = None
+        # if self.weight_maps is not None:
+        #     art_weight_map = self.weight_maps[idx]
+        # else :
+        #     art_weight_map = None
             
         if art_weight_map is None:
             art_weight_map = np.ones_like(image)
-            
 
         has_label = label is not None
         if not has_label:
             label = np.zeros_like(image)
-
-    
+        
         masks = np.stack([label,art_weight_map])
-        transformed = self.transform(image=image ,masks=masks)
+        transformed = None
+        while True:
+            transformed = self.transform(image=image ,masks=masks)
+            mask,_ = transformed['masks']
+            #There is at least one mask here
+            if np.sum(mask) > 0:
+                break
 
         image = transformed['image']
 
@@ -318,11 +340,12 @@ class Dataset(torch.utils.data.Dataset):
             sep_weight_map = ds.unet_weight_map(foreground, wc)
         
         weight_map = np.float32((art_weight_map -1) * art_weight + (sep_weight_map - 1) + 1)
-        
+
+        weight_map = np.ones_like(weight_map)
         y = np.stack([foreground,background,border])
         x =  np.concatenate([noise_x]*3,axis=0)
         has_label = np.expand_dims(np.array([has_label]),axis=(1,2,3))
-
+        
         return {
             'x':x,
             'y_denoise':noise_y, 
@@ -439,12 +462,16 @@ def _sample_ds(targets,crop_size):
     
     tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
 
-    for t in itertools.islice( tts,0,5):
+    for t in itertools.islice( tts,0,15):
         img = t['x'][0]
         mask = t['y_segmentation'][0]
         wm = np.squeeze(t['weight_map'])
+
+        _,axs = plt.subplots(1,3,figsize = (8,8))
         
-        plot_img_row([img,mask,wm])
+        for ax,im in zip(axs,[img,mask,wm]):
+            ax.imshow(im,vmin = 0,vmax = np.max(im),cmap='gray')
+            
         
 denoise_targets = [ {'img':den}  for den in denoised_imgs]
 final_targets = segmentation_targets + denoise_targets
