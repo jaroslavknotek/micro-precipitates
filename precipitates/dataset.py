@@ -166,8 +166,8 @@ def _filter_not_used_denoise_paths(dataset_root,denoise_root):
     def _clean(p):
         return ''.join([ s if s.isalnum() else '_' for s in p])
     used = {_clean(f.parent.stem) for f in dataset_root.rglob("img.png")}
-    all_denoise = list(denoise_root.rglob("*.tif"))
-    return [p for p in all_denoise if _clean(p.stem) not in used]
+    all_denoise = list(denoise_root.rglob("img.png"))
+    return [p for p in all_denoise if _clean(p.parent.name) not in used]
     
 def load_with_denoise(dataset_root,denoise_root = None):
     if denoise_root is None:

@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.5
+      jupytext_version: 1.14.6
   kernelspec:
-    display_name: napari_sam
+    display_name: torch_cv
     language: python
-    name: napari_sam
+    name: torch_cv
 ---
 
 ```python
@@ -68,19 +68,13 @@ import pathlib
 data_20230623_root = pathlib.Path('../data/20230623/labeled/')
 data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
 data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
-data_rip_tem_root = pathlib.Path('../data/rip_tem/')
 
 data_root = data_20230921_root
-#data_root = data_rip_tem_root
+data_denoise_root = pathlib.Path('../data/delisa-all/')
 
 data_test_root = pathlib.Path('../data/test/')
 result_root = pathlib.Path('../rev-results')
 model_eval_root = pathlib.Path('../results-tmp/')
-data_denoise_root = pathlib.Path('../../delisa-all-data/')
-```
-
-```python
-data_denoise_root = pathlib.Path('../data/rip_denoise/')
 ```
 
 ```python
@@ -102,34 +96,19 @@ train_params = {
 ```
 
 ```python
-test_filenames = set([
-    'M4_073_SMMAG_x400k_312',
-    'M4_053_SMMAG_x400k_312',
-    'M4_017_SMMAG_x400k_122',
-    'M4_007_SMMAG_x300k_422',
-    'M4_006_SMMAG_x300k_422'
-])
-```
-
-```python
 segmentation_targets = list(ds.get_img_dict_targets(train_params['segmentation_dataset_path']))
-
 test_targets = list(ds.get_img_dict_targets(data_test_root))
-test_targets = [se for se in segmentation_targets if se['filename'] in test_filenames]
 
-segmentation_targets = [se for se in segmentation_targets if se['filename'] not in test_filenames]
-
-# denoise_paths = ds._filter_not_used_denoise_paths(
-#     train_params['segmentation_dataset_path'],
-#     train_params['denoise_dataset_path']
-# )
-denoise_paths = data_denoise_root.glob('*.png')
+denoise_paths = ds._filter_not_used_denoise_paths(
+    train_params['segmentation_dataset_path'],
+    train_params['denoise_dataset_path']
+)
+#denoise_paths = list(train_params['denoise_dataset_path'].rglob("img.png"))
 
 denoised_imgs = [ds.load_image(d) for d in denoise_paths]
 data_denoised = list(zip(denoised_imgs,[None]*len(denoised_imgs)))
 
 f"{len(segmentation_targets)=},{len(test_targets)=},{len(data_denoised)=}"
-
 ```
 
 ```python
@@ -155,6 +134,7 @@ def fair_split_train_val_indices_to_batches(labels,batch_size,val_size):
         is_denoise,
         batch_size
     )
+    print(batches.shape,batches.dtype)
 
     assert np.unique([ len(b) for b in batches]) == [batch_size]
     assert len(np.unique(np.array(batches).flatten())) == len(labels)
@@ -197,6 +177,7 @@ def batch_fair(is_denoise,batch_size):
         batch = np.concatenate([den,seg,rest])
         batches_of_ids.append(batch)
         assert len(batch) == batch_size,f'{len(batch)=} {batch_size=}'
+    
     return np.array(batches_of_ids)
 
 ```
@@ -219,13 +200,13 @@ def get_train_val_augumentation(
         A.PadIfNeeded(crop_size_padded,crop_size_padded),
         A.RandomCrop(crop_size_padded,crop_size_padded),
         A.ElasticTransform(
-                p=.5,
+                p=.3,
                 alpha=10, 
                 sigma=120 * 0.1,
                 alpha_affine=120 * 0.1,
                 interpolation=interpolation
             ),
-        A.RandomBrightnessContrast(p=0.5),
+        A.RandomBrightnessContrast(p=0.3),
         A.OneOf(
             [
                 A.Sharpen(p=1, alpha=(0.2, 0.2*power)),
@@ -236,7 +217,7 @@ def get_train_val_augumentation(
     ]
     if noise_val > 0:
         transform_list.append(
-            A.augmentations.transforms.GaussNoise(noise_val,p = 1), 
+            A.augmentations.transforms.GaussNoise(noise_val,p = .3), 
         )
     if not preserve_orientation:
         transform_list += [
@@ -286,7 +267,7 @@ class Dataset(torch.utils.data.Dataset):
         image = self.images[idx]
         label = self.labels[idx]
 
-        if np.random.rand() > .3 and label is not None:
+        if np.random.rand() > .5 and label is not None:
             # assert np.sum(label)>0
             image,label = reshuffle.synthetize_precipitates(np.float32(image),np.uint8(label))
             image = np.float32(image)
@@ -307,7 +288,8 @@ class Dataset(torch.utils.data.Dataset):
         
         masks = np.stack([label,art_weight_map])
         transformed = None
-        while True:
+        #while True:
+        for _ in range(4): 
             transformed = self.transform(image=image ,masks=masks)
             mask,_ = transformed['masks']
             #There is at least one mask here
@@ -383,6 +365,8 @@ def prepare_train_val_dataset(
         batch_size,
         val_size
     )
+    
+    assert len(train_idc)>0 and len(train_idc)>0
     
     total_dataset_len = len(images)
     val_count = int(total_dataset_len * val_size)
