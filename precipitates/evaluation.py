@@ -209,16 +209,3 @@ def _norm(img):
     return (img.astype(float)-img_min) / (img_max-img_min)
 
 
-def evaluate_model(model,test_data,test_data_names,crop_size,segmentation_thr = .7):    
-    evaluations = {}
-    for (test_x,test_y),name in zip(test_data,test_data_names):
-        img_dict = nnet.predict(model,test_x,crop_size,device="cuda")
-        img_dict['y'] = test_y
-        evaluations.setdefault(name.stem,{})['images'] = img_dict
-    
-        pred = np.uint8(img_dict['foreground']>segmentation_thr)
-        gt = np.uint8(img_dict['y']>0)    
-        metrics_res = calculate_metrics(pred,gt)
-        evaluations.setdefault(name.stem,{})['metrics'] = metrics_res
-        
-    return evaluations

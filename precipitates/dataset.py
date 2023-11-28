@@ -144,22 +144,9 @@ def unet_weight_map(y, wc=None, w0 = 10, sigma = 5):
 
 
     
-def _get_border(foreground):
-    fg_int = np.uint8(foreground)
-    kernel = np.ones((3,3))
-    eroded = cv2.morphologyEx(fg_int,cv2.MORPH_ERODE,kernel)
-    return foreground - eroded
 
-def _get_mask(patch_size,percent = .2):
-    mask = np.zeros((patch_size,patch_size))
-    num_sample = int(percent * patch_size * patch_size) 
-    mask_indices = np.random.randint(2, patch_size-2, (2, num_sample))
-    replacement_offsets = np.random.randint(-2, 3, (2, num_sample))
-    replacement_indices = mask_indices + replacement_offsets
-    
-    ind_x,ind_y = mask_indices
-    mask[ind_x,ind_y] = 1
-    return mask,mask_indices,replacement_indices
+
+
 
 
 def _filter_not_used_denoise_paths(dataset_root,denoise_root):

@@ -5,11 +5,11 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.14.6
+      jupytext_version: 1.14.5
   kernelspec:
-    display_name: torch_cv
+    display_name: napari_sam
     language: python
-    name: torch_cv
+    name: napari_sam
 ---
 
 ```python
@@ -29,7 +29,6 @@ def _setup_logger(name,path = None,level = logging.DEBUG):
         formatter = logging.Formatter(
             '%(process)d: %(asctime)s - %(filename)s:%(funcName)s:%(lineno)d - %(levelname)s - %(message)s'
         )
-
         fh = logging.FileHandler(path)
         fh.setFormatter(formatter)
         fh.setLevel(logging.DEBUG)
@@ -39,7 +38,7 @@ def _setup_logger(name,path = None,level = logging.DEBUG):
 try:
     print(logger)
 except NameError:
-    logger  =_setup_logger('pred',path = '../rev-results.log')
+    logger  =_setup_logger('denoiseg',path = '../rev-results.log')
     
 try:
     print(res_logger)
@@ -51,546 +50,193 @@ except NameError:
 ```python
 import sys
 sys.path.insert(0,'..')
-import precipitates.nnet as nnet
 ```
 
 ```python
 import torch
 import numpy as np
+import pathlib
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+```
+
+```python
+import imageio
+import matplotlib.pyplot as plt
+
+root = pathlib.Path('/home/jry/data/UHCS/')
+gt_root = root/'GT_bin'
+img_root = root/'labeled_img'
+unlabeled_root = root/'unlabeled_img'
+
+gt_paths = list(gt_root.glob('*.png'))
+img_paths = [ img_root/f"{p.stem}.jpg" for p in gt_paths]
+unlabeled_paths = list(unlabeled_root.glob('*.jpg'))
 
 ```
 
 ```python
-import precipitates.dataset as ds
-import pathlib
+import denoiseg.image_utils as iu
 
-data_20230623_root = pathlib.Path('../data/20230623/labeled/')
-data_20230911_root = pathlib.Path('../data/20230911_rev/labeled/')
-data_20230921_root = pathlib.Path('../data/20230921_rev/labeled/')
+imgs_unlbl = list(map(iu.load_image, unlabeled_paths))
+gts_unlbl = [None]*len(imgs_unlbl)
 
-data_root = data_20230921_root
-data_denoise_root = pathlib.Path('../data/delisa-all/')
+imgs_lbl = list(map(iu.load_image, img_paths))
+gts_lbl = list(map(iu.load_mask, gt_paths)) 
 
-data_test_root = pathlib.Path('../data/test/')
-result_root = pathlib.Path('../rev-results')
-model_eval_root = pathlib.Path('../results-tmp/')
+imgs = imgs_lbl + imgs_unlbl
+gts = gts_lbl + gts_unlbl
+
+for img,gt in zip(imgs,gts):
+    _,axs = plt.subplots(1,2)
+    axs[0].imshow(img)
+    if gt is None:
+        gt = np.zeros_like(img)
+    axs[1].imshow(gt)
+    plt.show()
+    break
+
+patch_size = 128
+```
+
+```python
+import cv2
+
+
+import itertools
+import denoiseg
+
+import denoiseg.dataset as ds
+
+aug_train = ds.setup_augumentation(
+    patch_size,
+    elastic = True,
+    brightness_contrast = True,
+    flip_vertical = True,
+    flip_horizontal = True,
+    blur_sharp_power = 1,
+    noise_val = .01,
+    rotate_deg = 90
+)
+dataset = ds.DenoisegDataset(
+    imgs,
+    gts,
+    patch_size,
+    aug_train,
+    repeat = 1
+)
+ds.sample_ds(dataset,3)
 ```
 
 ```python
 train_params = {
-    'train_denoise_weight':1,
-    'val_denoise_weight':1,
-    'unet_weight_map_separation_weight':4,
-    'unet_weight_map_artifacts_weight':1,
-    'patience':30,
-    'repeat': 50,
-    'segmentation_dataset_path':data_root,
-    'denoise_dataset_path':data_denoise_root,
-    "crop_size":128,
-    "val_size":.2,
-    "note":"repeat by 100",
-    "augumentation_gauss_noise_val" :.002,
-    "augumentation_preserve_orientation":True
+    "patch_size":128,
+    "validation_set_percentage":.2,
+    "batch_size":32,
+    "dataset_repeat":50,
+    "model":{
+        "filters":8,
+        "depth":5,
+    },
+    #training
+    "epochs":100,
+    "patience":20,
+    "scheduler_patience":10,
+    "denoise_loss_weight":1,
+    
+    "augumentation":{
+        "elastic":True,
+        "brightness_contrast":True,
+        "flip_vertical": True,
+        "flip_horizontal": True,
+        "blur_sharp_power": 1,
+        "noise_val": .01,
+        "rotate_deg": 90
+    }
 }
+train_params['dataset_repeat'] = 1
+train_params['epochs'] = 5
+train_params['batch_size'] = 16
+train_params['model']['depth'] = 3
+
+# train_params = {
+#     'train_denoise_weight':1,
+#     'val_denoise_weight':1,
+#     'patience':30,
+#     'repeat': 50,
+#     'segmentation_dataset_path':data_root,
+#     'denoise_dataset_path':data_denoise_root,
+#     "crop_size":128,
+#     "val_size":.2,
+#     "note":"repeat by 100",
+#     "augumentation_gauss_noise_val" :.002,
+#     "augumentation_preserve_orientation":True
+# }
 ```
 
 ```python
-segmentation_targets = list(ds.get_img_dict_targets(train_params['segmentation_dataset_path']))
-test_targets = list(ds.get_img_dict_targets(data_test_root))
-
-denoise_paths = ds._filter_not_used_denoise_paths(
-    train_params['segmentation_dataset_path'],
-    train_params['denoise_dataset_path']
-)
-#denoise_paths = list(train_params['denoise_dataset_path'].rglob("img.png"))
-
-denoised_imgs = [ds.load_image(d) for d in denoise_paths]
-data_denoised = list(zip(denoised_imgs,[None]*len(denoised_imgs)))
-
-f"{len(segmentation_targets)=},{len(test_targets)=},{len(data_denoised)=}"
+train_dataloader,val_dataloader = ds.prepare_dataloaders(imgs,gts,train_params)
 ```
 
 ```python
-from tqdm.auto import tqdm
+# for d in train_dataloader:
+#     print(d.keys())
+#     for xx in [d['y_denoise'],d['y_segmentation'][:,0],d['y_segmentation'][:,1],d['y_segmentation'][:,2]]:
+#         i = xx.detach().cpu().numpy()
+#         print(np.min(i),np.max(i))
+#         break
+#     break
 
-from functools import partial
-import itertools
-
-import numpy as np
-import torch
-```
-
-```python
-
-
-def batched(array, n):
-    return [array[i::n] for i in range(n)]
-
-def fair_split_train_val_indices_to_batches(labels,batch_size,val_size):
-    is_denoise = np.array([ l is None for l in labels ])
-
-    batches = batch_fair(
-        is_denoise,
-        batch_size
-    )
-    print(batches.shape,batches.dtype)
-
-    assert np.unique([ len(b) for b in batches]) == [batch_size]
-    assert len(np.unique(np.array(batches).flatten())) == len(labels)
-    assert batches.shape[0] * batches.shape[1] >= len(labels)
-
-    val_batches_num = int(np.ceil(len(batches)* val_size))
-    val_batches = batches[-val_batches_num:]
-    train_batches = batches[:-val_batches_num]
-
-    train_idx = np.concatenate(train_batches)
-    val_idx = np.concatenate(val_batches)
-
-    return train_idx,val_idx
-
-def batch_fair(is_denoise,batch_size):
-    denoise_idx = np.argwhere(is_denoise).flatten().copy()
-    segmantation_idx = np.argwhere(~is_denoise).flatten().copy()
-    
-    np.random.shuffle(denoise_idx)
-    np.random.shuffle(segmantation_idx)
-
-    total = len(is_denoise)
-    n_d = len(is_denoise[~is_denoise])
-    n_s = total - n_d
-
-    batches_num = int(np.ceil(total/batch_size))
-    
-    batched_denoise = batched(denoise_idx,batches_num)
-    batched_segmentaiton = batched(segmantation_idx,batches_num)
-    
-    batches_of_ids = []
-    for den,seg in zip(batched_denoise,batched_segmentaiton):
-        
-        rest_num = batch_size - len(den) - len(seg)
-        rest = []
-        if rest_num >0:
-            rand_idx = np.random.randint(0,high = len(denoise_idx),size=(rest_num,))
-            rest = denoise_idx[rand_idx]
-        
-        batch = np.concatenate([den,seg,rest])
-        batches_of_ids.append(batch)
-        assert len(batch) == batch_size,f'{len(batch)=} {batch_size=}'
-    
-    return np.array(batches_of_ids)
-
-```
-
-```python
-import augumentation_reshuffle as reshuffle
-import albumentations as A
-import cv2
-
-def get_train_val_augumentation(
-    crop_size,
-    preserve_orientation = False,
-    noise_val = 0,
-    interpolation=cv2.INTER_CUBIC,
-    power = 1
-):
-    
-    crop_size_padded = int(crop_size*1.5)
-    transform_list = [
-        A.PadIfNeeded(crop_size_padded,crop_size_padded),
-        A.RandomCrop(crop_size_padded,crop_size_padded),
-        A.ElasticTransform(
-                p=.3,
-                alpha=10, 
-                sigma=120 * 0.1,
-                alpha_affine=120 * 0.1,
-                interpolation=interpolation
-            ),
-        A.RandomBrightnessContrast(p=0.3),
-        A.OneOf(
-            [
-                A.Sharpen(p=1, alpha=(0.2, 0.2*power)),
-                A.Blur(blur_limit=3*power, p=1),
-            ],
-            p=0.3,
-        ),
-    ]
-    if noise_val > 0:
-        transform_list.append(
-            A.augmentations.transforms.GaussNoise(noise_val,p = .3), 
-        )
-    if not preserve_orientation:
-        transform_list += [
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.5),
-            A.Rotate(limit=90, interpolation=interpolation),
-        ]
-    else:
-        transform_list.append(A.Rotate(limit=10, interpolation=interpolation))
-    
-    transform_list.append(A.CenterCrop(crop_size,crop_size))
-    train_transform = A.Compose(transform_list)
-    
-    val_transform = A.Compose([
-        A.PadIfNeeded(crop_size,crop_size),
-        A.RandomCrop(crop_size,crop_size),
-    ])
-    
-    return train_transform,val_transform
-
-class Dataset(torch.utils.data.Dataset):
-    def __init__(
-        self, 
-        images,
-        labels,
-        crop_size,
-        transform,
-        weight_maps=None, 
-        repeat = 1
-    ):
-        self.images = images
-        self.labels = labels
-        self.weight_maps = weight_maps
-        
-        self.transform = transform
-        self.crop_size = crop_size
-        self.repeat = repeat
-        
-    def __len__(self):
-        return len(self.images) * self.repeat
-    
-    def __getitem__(self, idx):
-        if idx >= self.__len__():
-            raise IndexError()
-        
-        idx = idx % len(self.images)
-        image = self.images[idx]
-        label = self.labels[idx]
-
-        if np.random.rand() > .5 and label is not None:
-            # assert np.sum(label)>0
-            image,label = reshuffle.synthetize_precipitates(np.float32(image),np.uint8(label))
-            image = np.float32(image)
-            label = np.float32(label)
-
-        art_weight_map = None
-        # if self.weight_maps is not None:
-        #     art_weight_map = self.weight_maps[idx]
-        # else :
-        #     art_weight_map = None
-            
-        if art_weight_map is None:
-            art_weight_map = np.ones_like(image)
-
-        has_label = label is not None
-        if not has_label:
-            label = np.zeros_like(image)
-        
-        masks = np.stack([label,art_weight_map])
-        transformed = None
-        #while True:
-        for _ in range(4): 
-            transformed = self.transform(image=image ,masks=masks)
-            mask,_ = transformed['masks']
-            #There is at least one mask here
-            if np.sum(mask) > 0:
-                break
-
-        image = transformed['image']
-
-        noise_y = np.copy(image)[None,...]
-        noise_x = np.copy(noise_y)
-
-        mask, mask_ind,replacement_ind = ds._get_mask(self.crop_size)
-
-        noise_x[:, mask_ind[0],mask_ind[1]] = noise_x[:,replacement_ind[0],replacement_ind[1]]
-
-        foreground,art_weight_map = transformed['masks']
-        background = np.abs(foreground -1)
-        border = ds._get_border(foreground)
-
-        art_weight = train_params['unet_weight_map_artifacts_weight']
-        sep_weight = train_params['unet_weight_map_separation_weight']
-        
-        if sep_weight == 0:
-            sep_weight_map = np.ones(weight_map.shape)
-        else:
-            wc = {
-                0: 1, # background
-                1: sep_weight +1  # objects
-            }
-            sep_weight_map = ds.unet_weight_map(foreground, wc)
-        
-        weight_map = np.float32((art_weight_map -1) * art_weight + (sep_weight_map - 1) + 1)
-
-        weight_map = np.ones_like(weight_map)
-        y = np.stack([foreground,background,border])
-        x =  np.concatenate([noise_x]*3,axis=0)
-        has_label = np.expand_dims(np.array([has_label]),axis=(1,2,3))
-        
-        return {
-            'x':x,
-            'y_denoise':noise_y, 
-            'mask_denoise':mask[None,...],
-            'y_segmentation':y,
-            'weight_map':weight_map[None,...],
-            'has_label':has_label
-        }
-    
-def index_list_by_list(_list,indices):
-    return [_list[i] for i in indices]
-
-
-def prepare_train_val_dataset(
-    images,
-    labels,
-    crop_size,
-    weight_maps = None,
-    val_size = .2,
-    batch_size = 32,
-    repeat = 1
-):
-    
-    train_t,val_t = get_train_val_augumentation(
-        crop_size,
-        noise_val = train_params['augumentation_gauss_noise_val'],
-        preserve_orientation=train_params['augumentation_preserve_orientation']
-    )
-    
-    if weight_maps is None:
-        weight_maps = [None]*len(images)
-        
-    train_idc, val_idc = fair_split_train_val_indices_to_batches(
-        labels,
-        batch_size,
-        val_size
-    )
-    
-    assert len(train_idc)>0 and len(train_idc)>0
-    
-    total_dataset_len = len(images)
-    val_count = int(total_dataset_len * val_size)
-    train_count = total_dataset_len -  val_count 
-    
-    train_dataset = Dataset(
-        index_list_by_list(images,train_idc) ,
-        index_list_by_list(labels,train_idc),
-        crop_size,
-        train_t,
-        weight_maps = index_list_by_list(weight_maps,train_idc),
-        repeat=repeat
-    )
-    # Don't shufle when using fair split
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
-
-    val_dataset = Dataset(
-        index_list_by_list(images,val_idc),
-        index_list_by_list(labels,val_idc),
-        crop_size,
-        val_t,
-        weight_maps = index_list_by_list(weight_maps,val_idc),
-        repeat=repeat
-    )
-    val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    return train_dataloader,val_dataloader
-```
-
-```python
-import matplotlib.pyplot as plt
-def plot_img_row(imgs,img_size = 4 ):
-    n = len(imgs)
-    fig,axs  = plt.subplots(1,n,figsize = ( img_size*n,img_size))
-    
-    for ax,img in zip(axs,imgs):
-        ax.imshow(img)    
-    
-    return fig,axs
-```
-
-```python
-import itertools
-def to_mask(a):
-    if a is None:
-        return None
-    return np.uint8(a>0)
-
-def to_weight_map(a):
-    if a is None:
-        return None
-    
-    return a + 1
-
-def _sample_ds(targets,crop_size):
-    images = []
-    masks = []
-    weight_maps = []
-    for t in targets:
-        images.append(t['img'])
-        masks.append(to_mask(t.get('mask',None)))
-        weight_maps.append(to_weight_map(t.get('weightmap',None))) 
-        
-    train_t,val_t = get_train_val_augumentation(
-        crop_size,
-        noise_val = train_params['augumentation_gauss_noise_val'],
-        preserve_orientation=train_params['augumentation_preserve_orientation']
-    )
-    
-    train_dataset = Dataset(
-        images,
-        masks,
-        crop_size,
-        train_t,
-        weight_maps = weight_maps,
-        repeat=50
-    )
-    
-    tts = ( t for t in train_dataset if np.sum(t['has_label'])>0 )
-
-    for t in itertools.islice( tts,0,15):
-        img = t['x'][0]
-        mask = t['y_segmentation'][0]
-        wm = np.squeeze(t['weight_map'])
-
-        _,axs = plt.subplots(1,3,figsize = (8,8))
-        
-        for ax,im in zip(axs,[img,mask,wm]):
-            ax.imshow(im,vmin = 0,vmax = np.max(im),cmap='gray')
-            
-        
-denoise_targets = [ {'img':den}  for den in denoised_imgs]
-final_targets = segmentation_targets + denoise_targets
-
-_sample_ds(final_targets,128)
+#     #break
 ```
 
 # Training
 
 ```python
-def _train_epoch(
-    model,
-    dataloader,
-    optimizer,
-    calc_loss_fn,
-    denoise_loss_weight,
-    device='cpu'
-):
-    model.train()
-    train_losses = []
+import os
 
-    for targets in dataloader:
-        optimizer.zero_grad()
+```
 
-        ls_seg,ls_denoise = _predict(model,calc_loss_fn,targets)
-        
-        ls = ls_seg + ls_denoise*denoise_loss_weight
-        ls.backward()
-        optimizer.step()
-        train_losses.append(ls.item())
-    
-    return np.mean(train_losses)
+```python
+import denoiseg.unet
+import denoiseg.training
 
-def _predict(model,calc_loss_fn,targets):
-    gpu_targets = {k:v.to(device) for k,v in targets.items()}
-    pred = model(gpu_targets['x'])
-    return calc_loss_fn(pred,gpu_targets)
-    
-def _evaluate_epoch(
-    model,
-    dataloader,
-    calc_loss_fn,
-    denoise_loss_weight,
-    device = 'cpu'
-):
-    model.eval()
-    val_losses = []
-    with torch.no_grad():
-        for targets in dataloader:
-            ls_seg,ls_denoise = _predict(model,calc_loss_fn,targets)
-            ls = ls_seg + ls_denoise*denoise_loss_weight
-            val_losses.append(ls.item())
-    return np.mean(val_losses)
+os.environ['OMP_THREAD_LIMIT'] = '8'
+os.environ['OMP_NUM_THREADS'] = '8'
 
-def _get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
-    
-def train_model(
+
+model_config = train_params['model']
+model = denoiseg.unet.UNet(
+    start_filters=model_config['filters'], 
+    depth=model_config['depth'], 
+    in_channels=3,
+    out_channels=4
+)
+
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = 'cpu'
+device = None
+checkpoint_path = pathlib.Path('training')/'model-best.pth'
+checkpoint_path.parent.mkdir(exist_ok=True,parents=True)
+
+loss_fn = denoiseg.training.get_loss(
+    device = device,
+    denoise_loss_weight = train_params['denoise_loss_weight']
+)
+out_losses = denoiseg.training.train(
     model,
     train_dataloader,
     val_dataloader,
-    calc_loss_fn,
-    checkpoint_path = None,
-    evaluator = None,
-    train_loss_denoise_weight = 1,
-    val_loss_denoise_weight = 1,
-    device = 'cpu',
-    patience = np.inf,
-    epochs = 100,
-    save_epochs = 10,
-):
+    loss_fn,
+    epochs = train_params['epochs'],
+    patience = train_params['patience'],
+    scheduler_patience = train_params['scheduler_patience'],
+    checkpoint_path = checkpoint_path,
+    device = device
+)
     
-    checkpointer = MetricCheckpointer(model,checkpoint_path)
-    early_stopper = nnet.EarlyStopper(patience=patience, min_delta=0)
-    epochs_l = range(epochs) if epochs is not None else itertools.count()
     
-    train_losses = []
-    validation_losses = []
-    
-    model.to(device)
-    
-    optimizer = torch.optim.Adam(model.parameters(),lr = .001)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        'min',
-        patience = patience //2
-    )
-    
-    for epoch in tqdm(epochs_l,desc='Training epochs'):  
-        train_loss = _train_epoch(
-            model,
-            train_dataloader,
-            optimizer,
-            calc_loss_fn,
-            train_loss_denoise_weight,
-            device = device
-        )
-        
-        validation_loss = _evaluate_epoch(
-            model,
-            val_dataloader,
-            calc_loss_fn,
-            val_loss_denoise_weight,
-            device = device
-        )
-        
-        train_losses.append(train_loss)
-        validation_losses.append(validation_loss)
-        scheduler.step(validation_loss)
-        
-        learning_rate = _get_lr(optimizer)
-        logger.info(
-            f"{epoch=} {validation_loss=:.5f} {early_stopper.counter=} {learning_rate=}"
-        )
-        
-        before_val_loss = checkpointer.min_validation_loss
-        
-        if evaluator is not None:
-            evaluator.evaluate_on_epoch(model,epoch)
-        
-        if checkpointer.checkpoint_if_best(validation_loss):
-            best_val_loss = checkpointer.min_validation_loss
-            logger.info(f"checkpoint best model {before_val_loss=:.5} -> {best_val_loss:.5}")
-            
-        if early_stopper.early_stop(validation_loss):             
-            logger.info(f"early stopping val:{early_stopper.min_validation_loss:.5}")
-            break
-        
-    loss_dict = {
-        "train_loss":train_losses,
-        "val_loss":validation_losses
-    }
-    
-    return model, loss_dict
 ```
 
 ```python
@@ -618,32 +264,7 @@ import torch
 from torch import nn
 
 
-def get_loss(loss_name,device = 'cpu'):
-    seg_loss = nnet.resolve_loss(loss_name).to(device)
-    loss_denoise = torch.nn.MSELoss().to(device)
-    
-    def calc_loss(prediction, targets):
-        
-        y_segmentation = targets['y_segmentation']
-        weight_map = targets['weight_map']
-        has_label = targets['has_label']
-        
-        pred_segm = prediction[:,1:]
-        
-        ls_seg_pure = seg_loss(pred_segm,y_segmentation)
-        ls_seg_only_valid = ls_seg_pure*weight_map*has_label
-        ls_seg = ls_seg_only_valid.mean()
-        
-        pred_denoise = prediction[:,0][:,None,...]
-        y_denoise = targets['y_denoise']
-        mask_denoise = targets['mask_denoise']
-        pred_denoise_masked = pred_denoise *mask_denoise
-        y_denoise_masked = y_denoise * mask_denoise
-        ls_denoise = loss_denoise(pred_denoise_masked, y_denoise_masked)
 
-        return ls_seg, ls_denoise
-
-    return calc_loss
 
 def _train_run(
     model_eval_root,
@@ -676,14 +297,7 @@ def _train_run(
         repeat = repeat,
         val_size = train_params['val_size']
     )
-    model = nnet.UNet(
-        start_filters=args.cnn_filters, 
-        depth=args.cnn_depth, 
-        in_channels=3,
-        out_channels=4
-        #up_mode='bicubic'
-    )
-    
+        
     train_loss_denoise_weight = args.train_loss_denoise_weight
     val_loss_denoise_weight = args.val_loss_denoise_weight
     
@@ -704,25 +318,6 @@ def _train_run(
     )
 
     return model,loss_dict
-
-class MetricCheckpointer:
-    def __init__(self, model, model_path , min_delta=0):
-        self.model = model
-        self.model_path = model_path
-        self.min_validation_loss = np.inf
-        self.min_delta = min_delta
-
-    def checkpoint_if_best(self, validation_loss):
-        
-        if self.model_path is None:
-            return False
-        
-        if validation_loss > self.min_validation_loss + self.min_delta:
-            return False
-    
-        self.min_validation_loss = validation_loss
-        torch.save(self. model,self.model_path)
-        return True
 
 def run_w_config(
     args_dict,
@@ -782,6 +377,106 @@ args_dict={
     'val_loss_denoise_weight':train_params['val_denoise_weight'],
     'cnn_filters':8
 }
+
+```
+
+# Evaluation
+
+```python
+class EpochModelEvaluator:
+    def __init__(
+        self,
+        targets, 
+        eval_root,
+        crop_size,
+        evaluate_every_nth_epoch = 10,
+        evaluate_after_nth_epoch = 30,
+        device = 'cpu'
+    ):
+        self.device = device
+        self.targets = targets
+        self.eval_root = eval_root
+        self.crop_size = crop_size
+        
+        self.nth_epoch = evaluate_every_nth_epoch
+        self.after_epoch = evaluate_after_nth_epoch
+
+    def __call__(self, model, epoch):
+        return self.evaluate_on_epoch(model,epoch)
+    
+    def evaluate_on_epoch(self, model, epoch):
+        if epoch < self.after_epoch or epoch % self.nth_epoch != 0:
+            return
+        
+        logger.info(f"Evaluating on {epoch=}")
+        
+        eval_path = self.eval_root/f'epoch_{epoch}'
+        eval_path.mkdir(exist_ok=True,parents=True)
+        
+        model_path = eval_path /'model.torch'
+        torch.save(model,model_path)
+        
+        evaluate_and_save(
+            model,
+            eval_path,
+            self.targets,
+            self.crop_size,
+            device = self.device,
+        )
+        plt.close()
+
+        
+def evaluate_and_save(
+    model,
+    eval_root,
+    test_targets,
+    crop_size,
+    device = 'cpu'
+):
+    eval_root.mkdir(exist_ok=True,parents=True)
+    
+    evaluations = evaluate_model(model,test_targets,crop_size,device = device)
+    
+    mean_evaluations = _mean_evaluations(evaluations)
+    
+    best_res = _extract_best_results(mean_evaluations)
+    save_evaluations(eval_root,evaluations ,loss_dict = None)
+    
+    plot_precision_recall_curve(mean_evaluations)
+
+    plt.savefig(eval_root/'all_prec_rec_curve.png')
+    
+    json.dump(best_res, open(eval_root/'best_results.json','w'))
+    return evaluations
+
+
+def evaluate_model(
+    model,
+    test_data,
+    test_data_names,
+    crop_size,
+    segmentation_thr = .7,
+    device = 'cpu',
+):    
+    evaluations = {}
+    for (test_x,test_y),name in zip(test_data,test_data_names):
+        img_dict = segmentation.segment_image(
+            model,
+            test_x,
+            crop_size,
+            device=device
+        )
+        
+        img_dict['y'] = test_y
+        evaluations.setdefault(name.stem,{})['images'] = img_dict
+    
+        pred = np.uint8(img_dict['foreground']>segmentation_thr)
+        gt = np.uint8(img_dict['y']>0)    
+        metrics_res = calculate_metrics(pred,gt)
+        evaluations.setdefault(name.stem,{})['metrics'] = metrics_res
+        
+    return evaluations
+
 
 ```
 
@@ -1013,65 +708,6 @@ def plot_precision_recall_curve(mean_evaluations,ax = None):
         lbl = f"$f_1$:{f1:.2} $t$:{thr:.2}"
         #ax.plot([rec],[prec],'x',label=)
         ax.text(rec,prec,lbl)
-        
-def evaluate_and_save(model,eval_root,test_targets,crop_size,device = 'cuda'):
-    eval_root.mkdir(exist_ok=True,parents=True)
-    
-    evaluations = evaluate_model(model,test_targets,crop_size,device = device)
-    
-    mean_evaluations = _mean_evaluations(evaluations)
-    
-    best_res = _extract_best_results(mean_evaluations)
-    save_evaluations(eval_root,evaluations ,loss_dict = None)
-    
-    plot_precision_recall_curve(mean_evaluations)
-
-    plt.savefig(eval_root/'all_prec_rec_curve.png')
-    
-    json.dump(best_res, open(eval_root/'best_results.json','w'))
-    return evaluations
-
-
-class EpochModelEvaluator:
-    
-    def __init__(
-        self,
-        targets, 
-        eval_root,
-        crop_size,
-        evaluate_every_nth_epoch = 10,
-        evaluate_after_nth_epoch = 30,
-        device = 'cuda'
-    ):
-        self.device = device
-        self.targets = targets
-        self.eval_root = eval_root
-        self.crop_size = crop_size
-        
-        self.nth_epoch = evaluate_every_nth_epoch
-        self.after_epoch = evaluate_after_nth_epoch
-    
-    def evaluate_on_epoch(self, model, epoch):
-        if epoch < self.after_epoch or epoch % self.nth_epoch != 0:
-            return
-        
-        logger.info(f"Evaluating on {epoch=}")
-        
-        eval_path = self.eval_root/f'epoch_{epoch}'
-        eval_path.mkdir(exist_ok=True,parents=True)
-        
-        model_path = eval_path /'model.torch'
-        torch.save(model,model_path)
-        
-        evaluate_and_save(
-            model,
-            eval_path,
-            self.targets,
-            self.crop_size,
-            device = self.device
-        )
-        plt.close()
-        
 
 ```
 
