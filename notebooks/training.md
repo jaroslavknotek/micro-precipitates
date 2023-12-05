@@ -629,7 +629,6 @@ def get_loss(loss_name,device = 'cpu'):
         has_label = targets['has_label']
         
         pred_segm = prediction[:,1:]
-        
         ls_seg_pure = seg_loss(pred_segm,y_segmentation)
         ls_seg_only_valid = ls_seg_pure*weight_map*has_label
         ls_seg = ls_seg_only_valid.mean()
